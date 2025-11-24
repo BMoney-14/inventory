@@ -281,19 +281,21 @@ tr:hover {
 .center-line {
     position: absolute;
     top: 50%;
-    left: 0;
-    width: 100%;
+    left: 50%;
+    width: 220px;
     height: 2px;
     /* background: #dc2626; */
     border-top: 2px dashed #dc2626; 
-    transform: translateY(-50%);
+    transform: translate(-50%, -50%);
     pointer-events: none;
     opacity: 0.8;
 }
 
 /* จำกัดขนาดความกว้างของพื้นที่สแกนไม่ให้ใหญ่เกินไป */
 #scannerContainer {
-    max-width: 480px;
+    width: 310px !important;
+    height: 310px !important;
+    position: relative;
     margin: 0 auto;
 }
 
