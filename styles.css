@@ -299,6 +299,14 @@ tr:hover {
     margin: 0 auto;
 }
 
+/* ปรับให้วิดีโอที่ html5-qrcode สร้างขึ้น มีขนาดเท่ากับ container และครอบพื้นที่ใหญ่กว่ากรอบ focus 30px ในทุกด้าน */
+#scanner > video {
+    width: 310px !important;
+    height: 310px !important;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
 /*
  * กล่องโฟกัสสแกนบาร์โค้ด
  * ใช้เพื่อให้ผู้ใช้งานวางบาร์โค้ดให้ตรงกรอบระหว่างการสแกน

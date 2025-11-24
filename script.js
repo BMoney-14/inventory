@@ -1,4 +1,4 @@
-const GAS_URL =
+const GAS_URL = 
     'https://script.google.com/macros/s/AKfycbwDzGixiLj0AwYLdCitPc0z4laVb8EEh_aQdBbbpyFkcGVdGrmZD2NRq6Mn5GJcchJG/exec';
 
 let productsCache = [];
@@ -41,38 +41,29 @@ async function startQrWithCamera(selectedDeviceId) {
     if (!html5QrCodeInstance) {
         html5QrCodeInstance = new Html5Qrcode("scanner");
     }
-    // const config = {
-    //     fps: 15,
-    //     qrbox: { width: 250, height: 250 },
-    //     useBarCodeDetectorIfSupported: true,
-    //     // ขอความละเอียดสูงขึ้นเพื่อเพิ่มความคมชัด
-    //     videoConstraints: {
-    //         deviceId: { exact: selectedDeviceId },
-    //         width: { ideal: 1920 },
-    //         height: { ideal: 1080 },
-    //         focusMode: "continuous"
-    //     },
-    //     formatsToSupport: [
-    //         Html5QrcodeSupportedFormats.QR_CODE,
-    //         Html5QrcodeSupportedFormats.CODE_128,
-    //         Html5QrcodeSupportedFormats.CODE_39,
-    //         Html5QrcodeSupportedFormats.EAN_13,
-    //         Html5QrcodeSupportedFormats.EAN_8,
-    //         Html5QrcodeSupportedFormats.UPC_A,
-    //         Html5QrcodeSupportedFormats.UPC_E
-    //     ]
-    // };
     const config = {
+        // เพิ่ม fps เป็น 20 เพื่อให้ตรวจจับได้เร็วขึ้น
         fps: 20,
+        // ขนาดกรอบสแกนเท่าเดิม (250px) โดย container ใหญ่กว่า 30px ทุกด้าน
         qrbox: { width: 250, height: 250 },
+        useBarCodeDetectorIfSupported: true,
+        // ขอความละเอียดสูงขึ้นเพื่อเพิ่มความคมชัด
         videoConstraints: {
-            width: { ideal: 310 },
-            height: { ideal: 310 },
-            aspectRatio: 1,
-            facingMode: "environment"
-        }
+            deviceId: { exact: selectedDeviceId },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            focusMode: "continuous"
+        },
+        formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E
+        ]
     };
-
     // เริ่มสแกนด้วย config ที่กำหนดไว้
     await html5QrCodeInstance.start(
         { deviceId: { exact: selectedDeviceId } },
@@ -486,21 +477,56 @@ function loadFromLocalStorage() {
     });
 }
 
+/**
+ * Export scanned products to an Excel (.xlsx) file instead of CSV.  This uses the SheetJS library
+ * loaded in index.html.  On unsupported environments (e.g. library not loaded) it will
+ * gracefully fall back to generating a CSV file.  The resulting file is downloaded
+ * directly, which also works on most mobile browsers.
+ */
 function exportToExcel() {
     const rows = document.querySelectorAll('#scannedBody tr');
-    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) {
+    // ถ้าไม่มีข้อมูลให้ export แสดง alert แล้วออก
+    if (rows.length === 0 || (rows[0].querySelector('td[colspan]'))) {
         alert('ไม่มีข้อมูลสำหรับ Export');
         return;
     }
 
-    let csv = 'รหัสสินค้า,ชื่อสินค้า,หน่วยนับ,จำนวนคงเหลือ,Barcode\n';
+    // เตรียมข้อมูลสำหรับ export
+    const header = ['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วยนับ', 'จำนวนคงเหลือ', 'Barcode'];
+    const data = [header];
     rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return;
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
         const barcode = row.getAttribute('data-barcode');
-        csv += `"${cells[0].textContent}","${cells[1].textContent}","${cells[2].textContent}",${qtyInput.value},"${barcode}"\n`;
+        data.push([
+            cells[0].textContent,
+            cells[1].textContent,
+            cells[2].textContent,
+            qtyInput ? qtyInput.value : '',
+            barcode
+        ]);
     });
 
+    // หาก SheetJS (XLSX) ถูกโหลด ใช้สร้างไฟล์ xlsx
+    if (typeof XLSX !== 'undefined' && XLSX && typeof XLSX.utils !== 'undefined') {
+        try {
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, 'ScannedProducts');
+            const filename = `สินค้าคงเหลือ_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.writeFile(wb, filename);
+            return;
+        } catch (e) {
+            console.warn('XLSX export failed, falling back to CSV', e);
+        }
+    }
+    // fallback: สร้าง CSV หากไม่สามารถใช้ XLSX ได้
+    let csv = '';
+    data.forEach((rowArr, index) => {
+        const rowString = rowArr.map(item => '"' + String(item).replace(/"/g, '""') + '"').join(',');
+        csv += rowString + '\n';
+    });
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
