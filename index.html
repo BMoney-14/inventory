@@ -82,11 +82,17 @@
 
                 <!-- ปุ่มเริ่ม/หยุดสแกนเพื่อเรียกใช้กล้อง -->
                 <div class="action-buttons" style="margin-bottom: 15px;">
+                    <!-- ปุ่มเริ่มสแกน -->
                     <button class="btn btn-primary" id="startScanBtn" onclick="startScanning()" style="flex: 1;">
                         ▶️ เริ่มสแกน
                     </button>
+                    <!-- ปุ่มหยุดสแกน -->
                     <button class="btn btn-secondary" id="stopScanBtn" onclick="stopScanning()" style="flex: 1; display: none;">
                         ⏹️ หยุดสแกน
+                    </button>
+                    <!-- ปุ่มสลับกล้อง: ซ่อนเริ่มต้นและแสดงเมื่อมีมากกว่า 1 กล้อง -->
+                    <button class="btn btn-secondary" id="switchCameraBtn" onclick="switchCamera()" style="flex: 1; display: none;">
+                        🔄 สลับกล้อง
                     </button>
                 </div>
 

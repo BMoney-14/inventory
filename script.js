@@ -5,6 +5,100 @@ let productsCache = [];
 let editingProductCode = null;
 let html5QrCodeInstance = null;
 
+// เก็บรายการกล้องทั้งหมด และ index ของกล้องที่ใช้งานอยู่
+let camerasList = [];
+let currentCameraIndex = 0;
+
+// สลับกล้องไปยังตัวถัดไปและเริ่มสแกนใหม่
+async function switchCamera() {
+    // หากมีน้อยกว่าหนึ่งกล้อง ไม่ต้องสลับ
+    if (!camerasList || camerasList.length < 2) {
+        return;
+    }
+    try {
+        // หยุดการสแกนกล้องปัจจุบัน
+        if (html5QrCodeInstance) {
+            await html5QrCodeInstance.stop();
+            await html5QrCodeInstance.clear();
+        }
+    } catch (err) {
+        console.warn("Error stopping scanner during switch", err);
+    }
+    // คำนวณ index ของกล้องถัดไป
+    currentCameraIndex = (currentCameraIndex + 1) % camerasList.length;
+    const selectedDeviceId = camerasList[currentCameraIndex].id;
+    // เริ่มสแกนด้วยกล้องใหม่
+    try {
+        await startQrWithCamera(selectedDeviceId);
+    } catch (err) {
+        console.error("Failed to switch camera", err);
+        showStatus("scanStatus", "❌ ไม่สามารถสลับกล้องได้", "error");
+    }
+}
+
+// ฟังก์ชันสำหรับเริ่มสแกนด้วยกล้องตาม id ที่กำหนด
+async function startQrWithCamera(selectedDeviceId) {
+    if (!html5QrCodeInstance) {
+        html5QrCodeInstance = new Html5Qrcode("scanner");
+    }
+    const config = {
+        fps: 20,
+        qrbox: { width: 300, height: 300 },
+        useBarCodeDetectorIfSupported: true,
+        // เพิ่ม videoConstraints เพื่อขอ resolution ที่สูงขึ้น
+        videoConstraints: {
+            deviceId: { exact: selectedDeviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            // หาก browser รองรับ continuous focus
+            focusMode: "continuous"
+        },
+        formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A
+        ]
+    };
+    // เริ่มสแกนด้วย config ที่กำหนดไว้
+    await html5QrCodeInstance.start(
+        { deviceId: { exact: selectedDeviceId } },
+        config,
+        async (decodedText) => {
+            const product = await findProductByBarcode(decodedText);
+            if (product) {
+                addToTable(product);
+                showStatus("scanStatus", `✅ พบสินค้า: ${product.name}`, "success");
+            } else {
+                showStatus("scanStatus", `❌ ไม่พบสินค้า Barcode: ${decodedText}`, "error");
+            }
+        },
+        (err) => {
+            // ไม่ต้องแสดง error ตอนสแกนแต่ละ frame
+        }
+    );
+    // หลังเริ่มสแกนแล้ว ลองปรับการโฟกัสและซูม (ถ้าเบราว์เซอร์รองรับ)
+    try {
+        if (typeof html5QrCodeInstance.applyVideoConstraints === 'function') {
+            // หน่วงเวลาเล็กน้อยให้สตรีมทำงานก่อนค่อยตั้งค่า
+            setTimeout(() => {
+                try {
+                    html5QrCodeInstance.applyVideoConstraints({
+                        focusMode: "continuous",
+                        advanced: [{ zoom: 2.0 }],
+                    });
+                } catch (e) {
+                    // ไม่ต้องทำอะไร หากตั้งค่าไม่ได้
+                }
+            }, 1000);
+        }
+    } catch (e) {
+        // ignore
+    }
+}
+
 // โหลดรายการสินค้า (เรียก action=listProducts จาก Apps Script)
 async function loadAllProducts() {
     try {
@@ -100,16 +194,18 @@ async function startScanning() {
 
     const startBtn = document.getElementById("startScanBtn");
     const stopBtn = document.getElementById("stopScanBtn");
+    const switchBtn = document.getElementById("switchCameraBtn");
     const scannerContainer = document.getElementById("scannerContainer");
 
+    // ซ่อนปุ่มเริ่มและแสดงปุ่มหยุด + ตัวสแกน
     startBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
     scannerContainer.style.display = "block";
 
     try {
+        // ดึงรายการกล้องทั้งหมด
         const cameras = await Html5Qrcode.getCameras();
-
-        // กรณีไม่พบกล้องเลย
+        // หากไม่มีอุปกรณ์กล้องเลย
         if (!cameras || cameras.length === 0) {
             showStatus("scanStatus", "❌ ไม่พบอุปกรณ์กล้องในเครื่องนี้", "error");
             startBtn.style.display = "inline-block";
@@ -118,47 +214,22 @@ async function startScanning() {
             return;
         }
 
-        // เลือกกล้องหลังถ้ามี
-        let cameraConfig = { facingMode: "environment" };
-        const backCam = cameras.find(cam => /back|rear|environment/i.test(cam.label));
-        if (backCam) {
-            cameraConfig = { deviceId: { exact: backCam.id } };
+        // เก็บรายการกล้องและค้นหากล้องหลังเป็นค่าเริ่มต้น
+        camerasList = cameras;
+        // ค้นหากล้องที่ชื่อสื่อถึง environment/back
+        const backIndex = camerasList.findIndex(cam => /back|rear|environment/i.test(cam.label));
+        currentCameraIndex = backIndex >= 0 ? backIndex : 0;
+
+        // แสดงปุ่มสลับกล้องเมื่อมีกล้องมากกว่า 1 ตัว
+        if (camerasList.length > 1) {
+            switchBtn.style.display = "inline-block";
         } else {
-            cameraConfig = { deviceId: { exact: cameras[0].id } };
+            switchBtn.style.display = "none";
         }
 
-        // สร้าง instance ถ้ายังไม่มี
-        if (!html5QrCodeInstance) {
-            html5QrCodeInstance = new Html5Qrcode("scanner");
-        }
-
-        await html5QrCodeInstance.start(
-            cameraConfig,
-            {
-                fps: 10,
-                qrbox: { width: 250, height: 250 },
-                formatsToSupport: [
-                    Html5QrcodeSupportedFormats.QR_CODE,
-                    Html5QrcodeSupportedFormats.CODE_128,
-                    Html5QrcodeSupportedFormats.CODE_39,
-                    Html5QrcodeSupportedFormats.EAN_13,
-                    Html5QrcodeSupportedFormats.EAN_8,
-                    Html5QrcodeSupportedFormats.UPC_A,
-                ]
-            },
-            async (decodedText) => {
-                const product = await findProductByBarcode(decodedText);
-                if (product) {
-                    addToTable(product);
-                    showStatus("scanStatus", `✅ พบสินค้า: ${product.name}`, "success");
-                } else {
-                    showStatus("scanStatus", `❌ ไม่พบสินค้า Barcode: ${decodedText}`, "error");
-                }
-            },
-            (err) => {
-                // error ตอนสแกน — ไม่ต้องแสดง
-            }
-        );
+        // เริ่มสแกนด้วยกล้องที่เลือก
+        const selectedDeviceId = camerasList[currentCameraIndex].id;
+        await startQrWithCamera(selectedDeviceId);
 
     } catch (err) {
         console.error("Failed to start scanner", err);
@@ -167,6 +238,7 @@ async function startScanning() {
         startBtn.style.display = "inline-block";
         stopBtn.style.display = "none";
         scannerContainer.style.display = "none";
+        switchBtn.style.display = "none";
 
         // ป้องกัน instance ค้าง
         if (html5QrCodeInstance) {
@@ -182,12 +254,14 @@ async function stopScanning() {
     const startBtn = document.getElementById("startScanBtn");
     const stopBtn = document.getElementById("stopScanBtn");
     const scannerContainer = document.getElementById("scannerContainer");
+    const switchBtn = document.getElementById("switchCameraBtn");
 
     // ถ้ายังไม่เคย start ไม่ต้องทำอะไร
     if (!html5QrCodeInstance) {
         startBtn.style.display = "inline-block";
         stopBtn.style.display = "none";
         scannerContainer.style.display = "none";
+        if (switchBtn) switchBtn.style.display = "none";
         return;
     }
 
@@ -203,6 +277,7 @@ async function stopScanning() {
     startBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
     scannerContainer.style.display = "none";
+    if (switchBtn) switchBtn.style.display = "none";
 }
 
 
