@@ -193,7 +193,7 @@ tr:hover {
     border: 2px solid #e5e7eb;
     border-radius: 6px;
     text-align: center;
-    font-size: 16px;
+    font-size: 16px; /* ตั้งค่าใหญ่พอเพื่อไม่ให้ Safari ซูม */
 }
 
 .status {
@@ -376,6 +376,7 @@ tr:hover {
     pointer-events: none;
     z-index: 60;
     white-space: nowrap;
+    display: none;
 }
 @media (max-width: 768px) {
     h1 {
@@ -398,6 +399,6 @@ tr:hover {
 
     .qty-input {
         width: 60px;
-        font-size: 14px;
+        font-size: 16px; /* รักษาขนาดตัวอักษรเพื่อลดการซูมบนมือถือ */
     }
 }

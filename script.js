@@ -92,6 +92,32 @@ function showFocusLoading(show) {
     overlay.style.display = show ? 'flex' : 'none';
 }
 
+// ปรับความสูงของตารางสินค้าที่สแกนให้เต็มพื้นที่ที่เหลือของหน้าจอ
+function adjustScannedTableHeight() {
+    try {
+        const scanTab = document.getElementById('tab-scan');
+        const header = document.querySelector('.header');
+        if (!scanTab || !header) return;
+        const cards = scanTab.querySelectorAll('.card');
+        if (!cards || cards.length < 2) return;
+        const scannedCard = cards[1];
+        const tableContainer = scannedCard.querySelector('.table-container');
+        if (!tableContainer) return;
+        // คำนวณพื้นที่ว่างในหน้าจอ: ความสูงของ viewport ลบด้วยความสูงของส่วนหัวและส่วนสแกนแรก
+        const viewportHeight = window.innerHeight;
+        const headerHeight = header.getBoundingClientRect().height;
+        const scanCard = cards[0];
+        const scanCardHeight = scanCard ? scanCard.getBoundingClientRect().height : 0;
+        const margin = 80; // เผื่อ margin/padding และช่องว่างอื่นๆ
+        let available = viewportHeight - headerHeight - scanCardHeight - margin;
+        if (available < 120) available = 120;
+        tableContainer.style.maxHeight = available + 'px';
+        tableContainer.style.overflowY = 'auto';
+    } catch (e) {
+        console.warn('adjustScannedTableHeight error', e);
+    }
+}
+
 // ====== ระบบคำแนะนำระยะห่างของบาร์โค้ด ======
 // เริ่มวิเคราะห์ภาพด้วย BarcodeDetector เพื่อแนะนำให้ผู้ใช้เข้าใกล้หรือออกห่าง
 function startDistanceGuide() {
@@ -197,7 +223,7 @@ async function startQrWithCamera(selectedDeviceId) {
     }
     const config = {
         // เพิ่ม fps ให้สูงขึ้นเพื่อจับเฟรมได้รวดเร็วขึ้น
-        fps: 25,
+        fps: 30,
         // ตั้งกรอบสแกนให้เป็นแนวนอน (280x120)
         qrbox: { width: 280, height: 120 },
         useBarCodeDetectorIfSupported: true,
@@ -283,8 +309,6 @@ async function startQrWithCamera(selectedDeviceId) {
         autoTurnOnFlash();
     }, 500);
 
-    // เริ่มระบบแนะนำระยะห่างเมื่อกล้องเริ่มทำงาน
-    startDistanceGuide();
 }
 
 // โหลดรายการสินค้า (เรียก action=listProducts จาก Apps Script)
@@ -397,6 +421,12 @@ async function startScanning() {
         isFlashOn = false;
     }
 
+    // แสดงข้อความแนะนำระยะห่างทันทีเมื่อแสดงกล้อง (ก่อนเริ่มสแกน)
+    startDistanceGuide();
+
+    // ปรับความสูงของตารางสินค้าให้เต็มพื้นที่หน้าจอ (หลังจากแสดงกล้อง)
+    adjustScannedTableHeight();
+
     try {
         // ดึงรายการกล้องทั้งหมด
         const cameras = await Html5Qrcode.getCameras();
@@ -480,6 +510,9 @@ async function stopScanning() {
     showFocusLoading(false);
     // หยุดคำแนะนำระยะห่าง
     stopDistanceGuide();
+
+    // ปรับความสูงของตารางสแกนหลังจากซ่อนกล้อง
+    adjustScannedTableHeight();
 }
 
 
@@ -618,6 +651,9 @@ function addToTable(product) {
         qtyInput.focus();
         qtyInput.select();
     }, 100);
+
+    // ปรับความสูงของตารางสแกนเมื่อเพิ่มข้อมูลใหม่ เพื่อให้การเลื่อนอยู่ภายในตาราง
+    adjustScannedTableHeight();
 }
 
 function saveToLocalStorage() {
@@ -667,23 +703,37 @@ function exportToExcel() {
         return;
     }
 
-    let csv = 'รหัสสินค้า,ชื่อสินค้า,หน่วยนับ,จำนวนคงเหลือ,Barcode\n';
+    // เตรียมข้อมูลสำหรับ SheetJS (รวมหัวตาราง)
+    const data = [];
+    data.push(['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วยนับ', 'จำนวนคงเหลือ', 'Barcode']);
     rows.forEach(row => {
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
         const barcode = row.getAttribute('data-barcode');
-        csv += `"${cells[0].textContent}","${cells[1].textContent}","${cells[2].textContent}",${qtyInput.value},"${barcode}"\n`;
+        data.push([
+            cells[0].textContent,
+            cells[1].textContent,
+            cells[2].textContent,
+            qtyInput.value,
+            barcode
+        ]);
     });
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `สินค้าคงเหลือ_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+        // ตรวจสอบว่า SheetJS ถูกโหลดแล้วหรือไม่
+        if (typeof XLSX !== 'undefined' && XLSX && XLSX.utils) {
+            const worksheet = XLSX.utils.aoa_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
+            const filename = `สินค้าคงเหลือ_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.writeFile(workbook, filename);
+        } else {
+            throw new Error('SheetJS library is not available');
+        }
+    } catch (err) {
+        console.error('Export to Excel failed', err);
+        alert('ไม่สามารถสร้างไฟล์ Excel ได้');
+    }
 }
 
 function confirmClearData() {
@@ -748,4 +798,9 @@ document.addEventListener('input', function (e) {
 window.addEventListener('load', function () {
     loadFromLocalStorage();
     loadAllProducts();
+    // ปรับความสูงของตารางสแกนเมื่อโหลดหน้าเสร็จ
+    adjustScannedTableHeight();
 });
+
+// ปรับความสูงของตารางสแกนเมื่อปรับขนาดหน้าต่าง (เช่น หมุนจอมือถือ)
+window.addEventListener('resize', adjustScannedTableHeight);

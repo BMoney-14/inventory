@@ -2,7 +2,8 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ป้องกันการซูมอัตโนมัติบนมือถือเพื่อไม่ให้ browser ขยายหน้าจอเมื่อโฟกัส input -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ระบบสแกนบาร์โค้ดสินค้า</title>
     <!-- Import Kanit font for a modern Thai typeface -->
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -117,7 +118,8 @@
                         <div class="spinner"></div>
                     </div>
                     <!-- คำแนะนำระยะห่างของบาร์โค้ด -->
-                    <div id="distanceGuide" class="distance-guide" style="display:none;">ปรับระยะให้อยู่ในกรอบ</div>
+                    <!-- คำแนะนำระยะห่างของบาร์โค้ด; ซ่อนโดย CSS และควบคุมด้วยสคริปต์ -->
+                    <div id="distanceGuide" class="distance-guide">ปรับระยะให้อยู่ในกรอบ</div>
                 </div>
 
                 <!-- ช่องสำหรับพิมพ์บาร์โค้ดด้วยตนเอง -->
@@ -172,8 +174,8 @@
             <h3>⚠️ ยืนยันการลบข้อมูล</h3>
             <p>คุณต้องการลบข้อมูลทั้งหมดใช่หรือไม่?<br>การกระทำนี้ไม่สามารถย้อนกลับได้</p>
             <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">ยกเลิก</button>
                 <button class="btn btn-danger" onclick="clearAllData()" style="flex: 1;">ยืนยัน</button>
+                <button class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">ยกเลิก</button>
             </div>
         </div>
     </div>
@@ -192,6 +194,8 @@
 
     <!-- html5-qrcode library for scanning QR and 1D barcodes -->
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- SheetJS library สำหรับสร้างไฟล์ Excel (.xlsx) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
