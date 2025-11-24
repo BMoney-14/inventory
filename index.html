@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสแกนบาร์โค้ดสินค้า</title>
+    <!-- Import Kanit font for a modern Thai typeface -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📦 ระบบสแกนบาร์โค้ดสินค้า</h1>
+            
+            <div class="tabs">
+                <button class="tab-btn" onclick="switchTab('add')">เพิ่มสินค้า</button>
+                <button class="tab-btn active" onclick="switchTab('scan')">สแกนบาร์โค้ด</button>
+            </div>
+        </div>
+
+        <!-- Tab 1: เพิ่มสินค้า -->
+        <div id="tab-add" class="tab-content">
+            <div class="card">
+                <h2 style="color: #dc2626; margin-bottom: 20px;">➕ เพิ่มสินค้าใหม่</h2>
+                
+                <div class="form-group">
+                    <label>รหัสสินค้า *</label>
+                    <input type="text" id="productCode" placeholder="กรอกรหัสสินค้า">
+                </div>
+
+                <div class="form-group">
+                    <label>ชื่อสินค้า *</label>
+                    <input type="text" id="productName" placeholder="กรอกชื่อสินค้า">
+                </div>
+
+                <div class="form-group">
+                    <label>Barcode *</label>
+                    <input type="text" id="productBarcode" placeholder="กรอกหมายเลข Barcode">
+                </div>
+
+                <div class="form-group">
+                    <label>หน่วยนับ *</label>
+                    <input type="text" id="productUnit" placeholder="เช่น ชิ้น, กล่อง, แพ็ค">
+                </div>
+
+                <button class="btn btn-primary" onclick="saveProduct()">💾 บันทึกสินค้า</button>
+                
+                <div id="addStatus"></div>
+
+                <!-- รายการสินค้าจากระบบ -->
+                <h3 style="color: #374151; margin-top: 30px; margin-bottom: 10px;">📦 รายการสินค้าทั้งหมด</h3>
+                <div class="table-container">
+                    <table id="productTable">
+                        <thead>
+                            <tr>
+                                <th>รหัส</th>
+                                <th>ชื่อสินค้า</th>
+                                <th>บาร์โค้ด</th>
+                                <th>หน่วย</th>
+                                <th>แก้ไข</th>
+                                <th>ลบ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productBody">
+                            <tr>
+                                <!-- จำนวนคอลัมน์ทั้งหมดในตารางถูกปรับเป็น 6 คอลัมน์ (รวมคอลัมน์แก้ไขและลบ) -->
+                                <td colspan="6" style="text-align: center; color: #9ca3af; padding: 20px;">
+                                    ไม่มีข้อมูลสินค้า
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: สแกนบาร์โค้ด -->
+        <div id="tab-scan" class="tab-content active">
+            <div class="card">
+                <h2 style="color: #dc2626; margin-bottom: 15px;">📱 สแกนบาร์โค้ด</h2>
+
+                <!-- ปุ่มเริ่ม/หยุดสแกนเพื่อเรียกใช้กล้อง -->
+                <div class="action-buttons" style="margin-bottom: 15px;">
+                    <button class="btn btn-primary" id="startScanBtn" onclick="startScanning()" style="flex: 1;">
+                        ▶️ เริ่มสแกน
+                    </button>
+                    <button class="btn btn-secondary" id="stopScanBtn" onclick="stopScanning()" style="flex: 1; display: none;">
+                        ⏹️ หยุดสแกน
+                    </button>
+                </div>
+
+                <!-- พื้นที่แสดงภาพจากกล้องระหว่างสแกน -->
+                <!-- พื้นที่แสดงภาพจากกล้องระหว่างสแกน -->
+                <!--
+                    เพิ่ม overlay เพื่อช่วยกำหนดกรอบในการโฟกัสบาร์โค้ด โดยกำหนดตำแหน่งเป็น absolute
+                    และใส่ border แบบ dashed สีแดง ซึ่งจะช่วยให้ผู้ใช้งานวางบาร์โค้ดในตำแหน่งที่เหมาะสม
+                -->
+                <div id="scannerContainer" style="display: none; margin-bottom: 15px; position: relative;">
+                    <div id="scanner" style="width: 100%;"></div>
+                    <!-- กล่องช่วยโฟกัส -->
+                    <div class="focus-area"></div>
+                </div>
+
+                <!-- ช่องสำหรับพิมพ์บาร์โค้ดด้วยตนเอง -->
+                <div class="form-group">
+                    <label>สแกนหรือพิมพ์บาร์โค้ด</label>
+                    <input type="text" id="barcodeInput" class="scanner-input" 
+                           placeholder="สแกนบาร์โค้ดที่นี่" 
+                           autocomplete="off">
+                </div>
+
+                <div id="scanStatus"></div>
+            </div>
+
+            <div class="card">
+                <h3 style="color: #374151; margin-bottom: 15px;">📋 รายการสินค้าที่สแกน</h3>
+                
+                <div class="table-container">
+                    <table id="scannedTable">
+                        <thead>
+                            <tr>
+                                <th>รหัส</th>
+                                <th>ชื่อสินค้า</th>
+                                <th>หน่วย</th>
+                                <th>จำนวน</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scannedBody">
+                            <tr>
+                                <td colspan="4" style="text-align: center; color: #9ca3af; padding: 30px;">
+                                    ยังไม่มีรายการสินค้า<br>กรุณาสแกนบาร์โค้ด
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-success" onclick="exportToExcel()" style="flex: 1;">
+                        📊 Export Excel
+                    </button>
+                    <button class="btn btn-danger" onclick="confirmClearData()" style="flex: 1;">
+                        🗑️ ล้างข้อมูล
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ยืนยันการลบ -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <h3>⚠️ ยืนยันการลบข้อมูล</h3>
+            <p>คุณต้องการลบข้อมูลทั้งหมดใช่หรือไม่?<br>การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">ยกเลิก</button>
+                <button class="btn btn-danger" onclick="clearAllData()" style="flex: 1;">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- html5-qrcode library for scanning QR and 1D barcodes -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="script.js"></script>
+</body>
+</html>

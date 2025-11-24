@@ -1,4 +1,5 @@
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyIZdWEZrMw8vUmjQhRTTmACCgYLl_1tvGuq2NK3Z-tdTcB2FUP4wRq5Fjej-5c4edc/exec';
+const GAS_URL = 
+    'https://script.google.com/macros/s/AKfycbwDzGixiLj0AwYLdCitPc0z4laVb8EEh_aQdBbbpyFkcGVdGrmZD2NRq6Mn5GJcchJG/exec';
 
 let productsCache = [];
 let editingProductCode = null;
@@ -26,7 +27,8 @@ function renderProductTable() {
     if (!tbody) return;
     tbody.innerHTML = '';
     if (!productsCache || productsCache.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #9ca3af; padding: 20px;">ไม่มีข้อมูลสินค้า</td></tr>`;
+        // ไม่มีสินค้าจากฐานข้อมูล ให้แสดงข้อความครอบคลุม 6 คอลัมน์ (รวมคอลัมน์แก้ไข/ลบ)
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #9ca3af; padding: 20px;">ไม่มีข้อมูลสินค้า</td></tr>`;
         return;
     }
     productsCache.forEach(prod => {
@@ -35,6 +37,10 @@ function renderProductTable() {
         const barcode = prod.barcode || '';
         const unit = prod.unit || '';
         const tr = document.createElement('tr');
+        /*
+            ปรับโครงสร้างตารางให้มีคอลัมน์แยกสำหรับปุ่มแก้ไขและลบ โดยเพิ่มเซลล์ใหม่สองตำแหน่ง
+            แทนที่จะรวมปุ่มทั้งสองไว้ในคอลัมน์เดียว ซึ่งช่วยให้ตารางสอดคล้องกับส่วนหัวที่มี 6 คอลัมน์
+        */
         tr.innerHTML = `
                     <td>${code}</td>
                     <td>${name}</td>
@@ -42,6 +48,8 @@ function renderProductTable() {
                     <td>${unit}</td>
                     <td>
                         <button class="btn btn-secondary btn-sm" onclick="editProduct('${code}')">แก้ไข</button>
+                    </td>
+                    <td>
                         <button class="btn btn-danger btn-sm" onclick="deleteProductByCode('${code}')">ลบ</button>
                     </td>
                 `;

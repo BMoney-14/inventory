@@ -277,6 +277,25 @@ tr:hover {
     margin-top: 20px;
 }
 
+/*
+ * กล่องโฟกัสสแกนบาร์โค้ด
+ * ใช้เพื่อให้ผู้ใช้งานวางบาร์โค้ดให้ตรงกรอบระหว่างการสแกน
+ * ตั้งค่าขนาดให้ตรงกับค่า qrbox ใน script.js (ปัจจุบันคือ 250x250)
+ */
+.focus-area {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 250px;
+    height: 250px;
+    transform: translate(-50%, -50%);
+    border: 3px dashed #dc2626;
+    border-radius: 12px;
+    pointer-events: none;
+    /* เพิ่มเงาจาง ๆ รอบกรอบเพื่อเน้น */
+    box-shadow: 0 0 0 9999px rgba(255, 255, 255, 0.5) inset;
+}
+
 @media (max-width: 768px) {
     h1 {
         font-size: 20px;
