@@ -8,6 +8,12 @@ let html5QrCodeInstance = null;
 // เก็บรายการกล้องทั้งหมด และ index ของกล้องที่ใช้งานอยู่
 let camerasList = [];
 let currentCameraIndex = 0;
+// สถานะการเปิดแฟลช (torch) ในขณะสแกน
+let isFlashOn = false;
+
+// Instance for barcode detection to provide distance guidance
+let barcodeDetector = null;
+let distanceGuideInterval = null;
 
 // สลับกล้องไปยังตัวถัดไปและเริ่มสแกนใหม่
 async function switchCamera() {
@@ -36,17 +42,166 @@ async function switchCamera() {
     }
 }
 
+// ====== การจัดการแฟลช (Torch) ======
+// ปุ่ม toggle แฟลช จะสลับสถานะแฟลชและอัปเดตข้อความบนปุ่ม
+async function toggleFlash() {
+    const btn = document.getElementById('flashToggleBtn');
+    // หากไม่มี instance หรือปุ่มไม่พร้อม ไม่ต้องทำอะไร
+    if (!html5QrCodeInstance || !btn) return;
+    try {
+        isFlashOn = !isFlashOn;
+        // ขอใช้ torch ผ่าน applyVideoConstraints
+        await html5QrCodeInstance.applyVideoConstraints({
+            advanced: [{ torch: isFlashOn }]
+        });
+        // ปรับข้อความบนปุ่มตามสถานะ
+        btn.textContent = isFlashOn ? '💡 ปิดแฟลช' : '💡 เปิดแฟลช';
+        // แสดงปุ่มเมื่อใช้งานได้
+        btn.style.display = 'inline-block';
+    } catch (err) {
+        console.warn('Toggle flash failed', err);
+        showStatus('scanStatus', '⚠️ ไม่รองรับการเปิดแฟลช', 'error');
+        // ซ่อนปุ่มหากไม่รองรับ
+        btn.style.display = 'none';
+    }
+}
+
+// เปิดแฟลชอัตโนมัติเมื่อเริ่มสแกน (ถ้าใช้งานได้)
+async function autoTurnOnFlash() {
+    const btn = document.getElementById('flashToggleBtn');
+    if (!html5QrCodeInstance || !btn) return;
+    try {
+        await html5QrCodeInstance.applyVideoConstraints({
+            advanced: [{ torch: true }]
+        });
+        isFlashOn = true;
+        btn.textContent = '💡 ปิดแฟลช';
+        btn.style.display = 'inline-block';
+    } catch (err) {
+        // หากเปิดไม่ได้ ให้ตั้งสถานะเป็นปิดและซ่อนปุ่ม
+        isFlashOn = false;
+        btn.textContent = '💡 เปิดแฟลช';
+        btn.style.display = 'none';
+    }
+}
+
+// แสดงหรือซ่อน overlay loading ในกรอบสแกนบาร์โค้ด
+function showFocusLoading(show) {
+    const overlay = document.getElementById('focusLoading');
+    if (!overlay) return;
+    overlay.style.display = show ? 'flex' : 'none';
+}
+
+// ====== ระบบคำแนะนำระยะห่างของบาร์โค้ด ======
+// เริ่มวิเคราะห์ภาพด้วย BarcodeDetector เพื่อแนะนำให้ผู้ใช้เข้าใกล้หรือออกห่าง
+function startDistanceGuide() {
+    // เคลียร์ interval เดิมถ้ามี
+    if (distanceGuideInterval) {
+        clearInterval(distanceGuideInterval);
+        distanceGuideInterval = null;
+    }
+    const guideEl = document.getElementById('distanceGuide');
+    // ซ่อนเนื้อหาเริ่มต้น
+    if (guideEl) {
+        guideEl.style.display = 'block';
+        guideEl.textContent = 'ปรับระยะให้อยู่ในกรอบ';
+    }
+    // ตรวจสอบว่าเบราว์เซอร์รองรับ BarcodeDetector หรือไม่
+    if (!('BarcodeDetector' in window)) {
+        return;
+    }
+    // ดึง element video หลังจากสแกนเริ่ม (อาจใช้เวลาในการสร้าง element)
+    const getVideo = () => document.querySelector('#scanner video');
+    let attempts = 0;
+    const initDetector = async () => {
+        const video = getVideo();
+        if (!video) {
+            // หากยังไม่พบวิดีโอ ให้ลองใหม่สักสองสามครั้ง
+            attempts++;
+            if (attempts < 10) {
+                setTimeout(initDetector, 200);
+            }
+            return;
+        }
+        try {
+            // ใช้รูปแบบบาร์โค้ดที่รองรับส่วนใหญ่สำหรับคำแนะนำ
+            if (!barcodeDetector) {
+                const supported = await BarcodeDetector.getSupportedFormats();
+                // เลือกรูปแบบที่เกี่ยวข้องกับ 1D barcodes
+                const desiredFormats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'codabar'];
+                const formatsToUse = desiredFormats.filter(f => supported.includes(f));
+                barcodeDetector = new BarcodeDetector({ formats: formatsToUse.length ? formatsToUse : supported });
+            }
+        } catch (err) {
+            console.warn('BarcodeDetector init failed', err);
+            return;
+        }
+        // เริ่ม interval เพื่อตรวจจับและให้คำแนะนำทุก 700ms
+        distanceGuideInterval = setInterval(async () => {
+            if (!barcodeDetector) return;
+            const v = getVideo();
+            if (!v) return;
+            // หากวิดีโอหยุด (เช่น หลังหยุดสแกน) ให้จบ interval
+            if (v.readyState < 2) return;
+            try {
+                const barcodes = await barcodeDetector.detect(v);
+                if (barcodes && barcodes.length > 0) {
+                    const bbox = barcodes[0].boundingBox;
+                    const ratio = bbox.width / v.videoWidth;
+                    // ตั้งค่า threshold เพื่อแนะนำ
+                    let message = '';
+                    if (ratio < 0.3) {
+                        message = '➡️ เข้าใกล้บาร์โค้ดมากขึ้น';
+                    } else if (ratio > 0.8) {
+                        message = '⬅️ ถอยออกเล็กน้อย';
+                    } else {
+                        message = '⏳ กำลังอ่าน... อยู่นิ่งๆ';
+                    }
+                    if (guideEl) {
+                        guideEl.textContent = message;
+                        guideEl.style.display = 'block';
+                    }
+                } else {
+                    // ไม่พบบาร์โค้ดในกรอบ ให้บอกว่าวางในกรอบ
+                    if (guideEl) {
+                        guideEl.textContent = 'วางบาร์โค้ดให้ตรงกรอบ';
+                        guideEl.style.display = 'block';
+                    }
+                }
+            } catch (err) {
+                console.warn('Barcode detect error', err);
+            }
+        }, 700);
+    };
+    // เริ่มต้นการสร้าง detector และ interval
+    initDetector();
+}
+
+// หยุด interval และซ่อนข้อความคำแนะนำ
+function stopDistanceGuide() {
+    if (distanceGuideInterval) {
+        clearInterval(distanceGuideInterval);
+        distanceGuideInterval = null;
+    }
+    const guideEl = document.getElementById('distanceGuide');
+    if (guideEl) {
+        guideEl.style.display = 'none';
+        guideEl.textContent = '';
+    }
+}
+
 // ฟังก์ชันสำหรับเริ่มสแกนด้วยกล้องตาม id ที่กำหนด
 async function startQrWithCamera(selectedDeviceId) {
     if (!html5QrCodeInstance) {
         html5QrCodeInstance = new Html5Qrcode("scanner");
     }
     const config = {
-        // เพิ่ม fps เป็น 20 เพื่อให้ตรวจจับได้เร็วขึ้น
-        fps: 20,
-        // ขนาดกรอบสแกนเท่าเดิม (250px) โดย container ใหญ่กว่า 30px ทุกด้าน
-        qrbox: { width: 250, height: 250 },
+        // เพิ่ม fps ให้สูงขึ้นเพื่อจับเฟรมได้รวดเร็วขึ้น
+        fps: 25,
+        // ตั้งกรอบสแกนให้เป็นแนวนอน (280x120)
+        qrbox: { width: 280, height: 120 },
         useBarCodeDetectorIfSupported: true,
+        disableFlip: true,
         // ขอความละเอียดสูงขึ้นเพื่อเพิ่มความคมชัด
         videoConstraints: {
             deviceId: { exact: selectedDeviceId },
@@ -70,6 +225,10 @@ async function startQrWithCamera(selectedDeviceId) {
         config,
         async (decodedText) => {
             // เมื่อสแกนได้ข้อความ (บาร์โค้ด/คิวอาร์โค้ด)
+            // ซ่อน overlay โหลดทันทีที่ได้ข้อมูล
+            showFocusLoading(false);
+            // หยุดตรวจสอบคำแนะนำระยะห่างทันทีเมื่อได้ผลลัพธ์
+            stopDistanceGuide();
             const product = await findProductByBarcode(decodedText);
             if (product) {
                 // เพิ่มข้อมูลในตารางสแกน
@@ -98,10 +257,10 @@ async function startQrWithCamera(selectedDeviceId) {
             // ไม่ต้องแสดง error ตอนสแกนแต่ละ frame
         }
     );
-    // หลังเริ่มสแกนแล้ว ลองปรับการโฟกัสและซูม (ถ้าเบราว์เซอร์รองรับ)
+    // หลังเริ่มสแกนแล้ว ลองปรับการโฟกัส ซูม และเปิดแฟลชอัตโนมัติ (ถ้าเบราว์เซอร์รองรับ)
     try {
         if (typeof html5QrCodeInstance.applyVideoConstraints === 'function') {
-            // หน่วงเวลาเล็กน้อยให้สตรีมทำงานก่อนค่อยตั้งค่า
+            // หน่วงเวลาเล็กน้อยให้สตรีมทำงานก่อนค่อยตั้งค่า focus/zoom
             setTimeout(() => {
                 try {
                     html5QrCodeInstance.applyVideoConstraints({
@@ -116,6 +275,16 @@ async function startQrWithCamera(selectedDeviceId) {
     } catch (e) {
         // ignore
     }
+
+    // แสดง overlay loading ในกรอบสแกน
+    showFocusLoading(true);
+    // เปิดแฟลชอัตโนมัติ (หากรองรับ)
+    setTimeout(() => {
+        autoTurnOnFlash();
+    }, 500);
+
+    // เริ่มระบบแนะนำระยะห่างเมื่อกล้องเริ่มทำงาน
+    startDistanceGuide();
 }
 
 // โหลดรายการสินค้า (เรียก action=listProducts จาก Apps Script)
@@ -214,12 +383,19 @@ async function startScanning() {
     const startBtn = document.getElementById("startScanBtn");
     const stopBtn = document.getElementById("stopScanBtn");
     const switchBtn = document.getElementById("switchCameraBtn");
+    const flashBtn = document.getElementById("flashToggleBtn");
     const scannerContainer = document.getElementById("scannerContainer");
 
     // ซ่อนปุ่มเริ่มและแสดงปุ่มหยุด + ตัวสแกน
     startBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
     scannerContainer.style.display = "block";
+    // ซ่อนปุ่มแฟลชตอนเริ่ม จะแสดงเมื่อเปิดกล้องสำเร็จและรองรับแฟลช
+    if (flashBtn) {
+        flashBtn.style.display = 'none';
+        flashBtn.textContent = '💡 ปิดแฟลช';
+        isFlashOn = false;
+    }
 
     try {
         // ดึงรายการกล้องทั้งหมด
@@ -274,6 +450,7 @@ async function stopScanning() {
     const stopBtn = document.getElementById("stopScanBtn");
     const scannerContainer = document.getElementById("scannerContainer");
     const switchBtn = document.getElementById("switchCameraBtn");
+    const flashBtn = document.getElementById("flashToggleBtn");
 
     // ถ้ายังไม่เคย start ไม่ต้องทำอะไร
     if (!html5QrCodeInstance) {
@@ -297,6 +474,12 @@ async function stopScanning() {
     stopBtn.style.display = "none";
     scannerContainer.style.display = "none";
     if (switchBtn) switchBtn.style.display = "none";
+    // ซ่อนปุ่มแฟลชเมื่อหยุดสแกน
+    if (flashBtn) flashBtn.style.display = "none";
+    // ซ่อน overlay loading
+    showFocusLoading(false);
+    // หยุดคำแนะนำระยะห่าง
+    stopDistanceGuide();
 }
 
 
@@ -477,56 +660,21 @@ function loadFromLocalStorage() {
     });
 }
 
-/**
- * Export scanned products to an Excel (.xlsx) file instead of CSV.  This uses the SheetJS library
- * loaded in index.html.  On unsupported environments (e.g. library not loaded) it will
- * gracefully fall back to generating a CSV file.  The resulting file is downloaded
- * directly, which also works on most mobile browsers.
- */
 function exportToExcel() {
     const rows = document.querySelectorAll('#scannedBody tr');
-    // ถ้าไม่มีข้อมูลให้ export แสดง alert แล้วออก
-    if (rows.length === 0 || (rows[0].querySelector('td[colspan]'))) {
+    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) {
         alert('ไม่มีข้อมูลสำหรับ Export');
         return;
     }
 
-    // เตรียมข้อมูลสำหรับ export
-    const header = ['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วยนับ', 'จำนวนคงเหลือ', 'Barcode'];
-    const data = [header];
+    let csv = 'รหัสสินค้า,ชื่อสินค้า,หน่วยนับ,จำนวนคงเหลือ,Barcode\n';
     rows.forEach(row => {
-        if (row.querySelector('td[colspan]')) return;
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
         const barcode = row.getAttribute('data-barcode');
-        data.push([
-            cells[0].textContent,
-            cells[1].textContent,
-            cells[2].textContent,
-            qtyInput ? qtyInput.value : '',
-            barcode
-        ]);
+        csv += `"${cells[0].textContent}","${cells[1].textContent}","${cells[2].textContent}",${qtyInput.value},"${barcode}"\n`;
     });
 
-    // หาก SheetJS (XLSX) ถูกโหลด ใช้สร้างไฟล์ xlsx
-    if (typeof XLSX !== 'undefined' && XLSX && typeof XLSX.utils !== 'undefined') {
-        try {
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(data);
-            XLSX.utils.book_append_sheet(wb, ws, 'ScannedProducts');
-            const filename = `สินค้าคงเหลือ_${new Date().toISOString().split('T')[0]}.xlsx`;
-            XLSX.writeFile(wb, filename);
-            return;
-        } catch (e) {
-            console.warn('XLSX export failed, falling back to CSV', e);
-        }
-    }
-    // fallback: สร้าง CSV หากไม่สามารถใช้ XLSX ได้
-    let csv = '';
-    data.forEach((rowArr, index) => {
-        const rowString = rowArr.map(item => '"' + String(item).replace(/"/g, '""') + '"').join(',');
-        csv += rowString + '\n';
-    });
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);

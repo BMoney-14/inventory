@@ -94,6 +94,10 @@
                     <button class="btn btn-secondary" id="switchCameraBtn" onclick="switchCamera()" style="flex: 1; display: none;">
                         🔄 สลับกล้อง
                     </button>
+                <!-- ปุ่มเปิด/ปิดแฟลช: ซ่อนเริ่มต้นและแสดงเมื่อกล้องรองรับแฟลช -->
+                <button class="btn btn-secondary" id="flashToggleBtn" onclick="toggleFlash()" style="flex: 1; display: none;">
+                    💡 ปิดแฟลช
+                </button>
                 </div>
 
                 <!-- พื้นที่แสดงภาพจากกล้องระหว่างสแกน -->
@@ -108,6 +112,12 @@
                     <div class="focus-area"></div>
                     <!-- ขีดแนวนอนกลางจอเพื่อช่วยเล็งบาร์โค้ด -->
                     <div class="center-line"></div>
+                    <!-- Overlay loading ขณะกำลังอ่านบาร์โค้ดในกรอบโฟกัส -->
+                    <div id="focusLoading" class="focus-loading">
+                        <div class="spinner"></div>
+                    </div>
+                    <!-- คำแนะนำระยะห่างของบาร์โค้ด -->
+                    <div id="distanceGuide" class="distance-guide" style="display:none;">ปรับระยะให้อยู่ในกรอบ</div>
                 </div>
 
                 <!-- ช่องสำหรับพิมพ์บาร์โค้ดด้วยตนเอง -->
@@ -182,8 +192,6 @@
 
     <!-- html5-qrcode library for scanning QR and 1D barcodes -->
     <script src="https://unpkg.com/html5-qrcode"></script>
-    <!-- SheetJS library for generating Excel files (.xlsx) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
