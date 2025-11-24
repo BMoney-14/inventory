@@ -7,7 +7,7 @@
     <title>ระบบสแกนบาร์โค้ดสินค้า</title>
     <!-- Import Kanit font for a modern Thai typeface -->
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=202511242045">
+    <link rel="stylesheet" href="styles.css?v=202511242058">
 </head>
 <body>
     <div class="container">
@@ -114,7 +114,7 @@
                     <!-- ขีดแนวนอนกลางจอเพื่อช่วยเล็งบาร์โค้ด -->
                     <div class="center-line"></div>
                     <!-- Overlay loading ขณะกำลังอ่านบาร์โค้ดในกรอบโฟกัส -->
-                    <!-- เอา loading กลมๆออก คงไว้เฉพาะ overlay ว่างไว้ -->
+                    <!-- ลบ spinner เพื่อไม่ให้แสดง Loading กลมๆ แต่ยังคงโครงสร้าง div เพื่อรองรับการเปิด/ปิดผ่านสคริปต์ได้ -->
                     <div id="focusLoading" class="focus-loading"></div>
                     <!-- คำแนะนำระยะห่างของบาร์โค้ด -->
                     <!-- คำแนะนำระยะห่างของบาร์โค้ด; ซ่อนโดย CSS และควบคุมด้วยสคริปต์ -->
@@ -139,16 +139,15 @@
                     <table id="scannedTable">
                         <thead>
                             <tr>
-                        <th>No</th>
-                        <th>รหัส</th>
-                        <th>ชื่อสินค้า</th>
-                        <th>หน่วย</th>
-                        <th>จำนวน</th>
+                                <th>รหัส</th>
+                                <th>ชื่อสินค้า</th>
+                                <th>หน่วย</th>
+                                <th>จำนวน</th>
                             </tr>
                         </thead>
                         <tbody id="scannedBody">
                             <tr>
-                            <td colspan="5" style="text-align: center; color: #9ca3af; padding: 30px;">
+                                <td colspan="4" style="text-align: center; color: #9ca3af; padding: 30px;">
                                     ยังไม่มีรายการสินค้า<br>กรุณาสแกนบาร์โค้ด
                                 </td>
                             </tr>
@@ -196,6 +195,6 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <!-- SheetJS library สำหรับสร้างไฟล์ Excel (.xlsx) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="script.js?v=202511242045"></script>
+    <script src="script.js?v=202511242058"></script>
 </body>
 </html>

@@ -87,9 +87,9 @@ async function autoTurnOnFlash() {
 
 // แสดงหรือซ่อน overlay loading ในกรอบสแกนบาร์โค้ด
 function showFocusLoading(show) {
-    // ไม่แสดง overlay loading เพื่อลดความรก ปล่อยให้เห็นเฉพาะกรอบและข้อความแนะนำ
     const overlay = document.getElementById('focusLoading');
     if (!overlay) return;
+    // เราไม่ต้องการแสดง overlay loading อีกแล้ว ดังนั้นให้ซ่อนเสมอ
     overlay.style.display = 'none';
 }
 
@@ -239,11 +239,11 @@ async function startQrWithCamera(selectedDeviceId) {
         qrbox: { width: 280, height: 120 },
         useBarCodeDetectorIfSupported: true,
         disableFlip: true,
-        // ขอความละเอียด HD เพื่อสมดุลระหว่างความชัดและความเร็ว (1280x720)
+        // ขอความละเอียดสูงขึ้นเพื่อเพิ่มความคมชัด
         videoConstraints: {
             deviceId: { exact: selectedDeviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
             focusMode: "continuous"
         },
         formatsToSupport: [
@@ -313,8 +313,8 @@ async function startQrWithCamera(selectedDeviceId) {
         // ignore
     }
 
-    // แสดง overlay loading ในกรอบสแกน
-    showFocusLoading(true);
+    // ไม่ต้องแสดง overlay loading ในกรอบสแกน
+    showFocusLoading(false);
     // เปิดแฟลชอัตโนมัติ (หากรองรับ)
     setTimeout(() => {
         autoTurnOnFlash();
@@ -450,11 +450,12 @@ async function startScanning() {
             return;
         }
 
-        // เก็บรายการกล้องและค้นหากล้องหลังเป็นค่าเริ่มต้น
-        camerasList = cameras;
-        // ค้นหากล้องที่ชื่อสื่อถึง environment/back
-        const backIndex = camerasList.findIndex(cam => /back|rear|environment/i.test(cam.label));
-        currentCameraIndex = backIndex >= 0 ? backIndex : 0;
+        // เก็บรายการกล้องและกรองเฉพาะกล้องที่เป็นด้านหลัง/สภาพแวดล้อม
+        // เพื่อไม่ให้ใช้กล้องหน้าโดยไม่ได้ตั้งใจ
+        let backCams = cameras.filter(cam => /back|rear|environment/i.test(cam.label));
+        camerasList = backCams.length > 0 ? backCams : cameras;
+        // ตั้งกล้องตัวแรกเป็นค่าเริ่มต้น (ซึ่งควรเป็นกล้องหลังถ้ามี)
+        currentCameraIndex = 0;
 
         // แสดงปุ่มสลับกล้องเมื่อมีกล้องมากกว่า 1 ตัว
         if (camerasList.length > 1) {
@@ -539,7 +540,7 @@ function switchTab(tab) {
     } else {
         document.querySelector('.tab-btn:last-child').classList.add('active');
         document.getElementById('tab-scan').classList.add('active');
-        document.getElementById('barcodeInput').focus();
+        // ไม่ต้องโฟกัสช่องบาร์โค้ดอัตโนมัติเมื่อสลับไปแท็บสแกน
     }
 }
 
@@ -638,17 +639,13 @@ function addToTable(product) {
         return;
     }
 
-    // หากยังมีแถว placeholder ให้ลบก่อน
-    if (tbody.querySelector('td[colspan="5"]')) {
+    if (tbody.querySelector('td[colspan="4"]')) {
         tbody.innerHTML = '';
     }
 
     const row = document.createElement('tr');
     row.setAttribute('data-barcode', product.barcode);
-    // คำนวณลำดับ No จากจำนวนแถวที่มีอยู่ + 1
-    const rowIndex = tbody.querySelectorAll('tr').length + 1;
     row.innerHTML = `
-                <td>${rowIndex}</td>
                 <td>${product.productCode}</td>
                 <td>${product.name}</td>
                 <td>${product.unit}</td>
@@ -678,11 +675,10 @@ function saveToLocalStorage() {
         if (row.querySelector('td[colspan]')) return;
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
-        // เนื่องจากคอลัมน์แรกคือลำดับ (No) ให้เริ่มเก็บข้อมูลตั้งแต่คอลัมน์ที่ 2 เป็นต้นไป
         data.push({
-            productCode: cells[1].textContent,
-            name: cells[2].textContent,
-            unit: cells[3].textContent,
+            productCode: cells[0].textContent,
+            name: cells[1].textContent,
+            unit: cells[2].textContent,
             quantity: qtyInput.value,
             barcode: row.getAttribute('data-barcode')
         });
@@ -696,12 +692,10 @@ function loadFromLocalStorage() {
     const products = JSON.parse(data);
     const tbody = document.getElementById('scannedBody');
     tbody.innerHTML = '';
-    products.forEach((product, index) => {
+    products.forEach(product => {
         const row = document.createElement('tr');
         row.setAttribute('data-barcode', product.barcode);
-        // เพิ่มคอลัมน์ No และจัดเรียงคอลัมน์ตามโครงสร้างใหม่ (No, code, name, unit, qty)
         row.innerHTML = `
-                    <td>${index + 1}</td>
                     <td>${product.productCode}</td>
                     <td>${product.name}</td>
                     <td>${product.unit}</td>
@@ -728,12 +722,11 @@ function exportToExcel() {
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
         const barcode = row.getAttribute('data-barcode');
-        // ข้อมูลในตาราง: คอลัมน์ 1 เป็นลำดับ (No) จึงขยับ index
         data.push([
-            cells[1].textContent, // productCode
-            cells[2].textContent, // name
-            cells[3].textContent, // unit
-            qtyInput.value,      // quantity
+            cells[0].textContent,
+            cells[1].textContent,
+            cells[2].textContent,
+            qtyInput.value,
             barcode
         ]);
     });
@@ -768,7 +761,7 @@ function clearAllData() {
     const tbody = document.getElementById('scannedBody');
     tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" style="text-align: center; color: #9ca3af; padding: 30px;">
+                    <td colspan="4" style="text-align: center; color: #9ca3af; padding: 30px;">
                         ยังไม่มีรายการสินค้า<br>กรุณาสแกนบาร์โค้ด
                     </td>
                 </tr>
