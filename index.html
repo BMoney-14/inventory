@@ -106,6 +106,8 @@
                     <div id="scanner" style="width: 100%;"></div>
                     <!-- กล่องช่วยโฟกัส -->
                     <div class="focus-area"></div>
+                    <!-- ขีดแนวนอนกลางจอเพื่อช่วยเล็งบาร์โค้ด -->
+                    <div class="center-line"></div>
                 </div>
 
                 <!-- ช่องสำหรับพิมพ์บาร์โค้ดด้วยตนเอง -->
@@ -162,6 +164,18 @@
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">ยกเลิก</button>
                 <button class="btn btn-danger" onclick="clearAllData()" style="flex: 1;">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal แจ้งเตือนกรณีไม่พบสินค้า -->
+    <div id="notFoundModal" class="modal">
+        <div class="modal-content">
+            <h3 style="color: #dc2626; margin-bottom: 15px;">❌ ไม่พบสินค้า</h3>
+            <p>ไม่พบรหัสบาร์โค้ดนี้ในระบบ<br>กรุณาเพิ่มข้อมูลสินค้า</p>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeNotFoundModal()" style="flex: 1;">ปิด</button>
+                <button class="btn btn-primary" onclick="openAddTabFromModal()" style="flex: 1;">เพิ่มสินค้า</button>
             </div>
         </div>
     </div>

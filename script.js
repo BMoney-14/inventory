@@ -42,15 +42,14 @@ async function startQrWithCamera(selectedDeviceId) {
         html5QrCodeInstance = new Html5Qrcode("scanner");
     }
     const config = {
-        fps: 20,
-        qrbox: { width: 300, height: 300 },
+        fps: 15,
+        qrbox: { width: 250, height: 250 },
         useBarCodeDetectorIfSupported: true,
-        // เพิ่ม videoConstraints เพื่อขอ resolution ที่สูงขึ้น
+        // ขอความละเอียดสูงขึ้นเพื่อเพิ่มความคมชัด
         videoConstraints: {
             deviceId: { exact: selectedDeviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            // หาก browser รองรับ continuous focus
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
             focusMode: "continuous"
         },
         formatsToSupport: [
@@ -59,7 +58,8 @@ async function startQrWithCamera(selectedDeviceId) {
             Html5QrcodeSupportedFormats.CODE_39,
             Html5QrcodeSupportedFormats.EAN_13,
             Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E
         ]
     };
     // เริ่มสแกนด้วย config ที่กำหนดไว้
@@ -67,12 +67,29 @@ async function startQrWithCamera(selectedDeviceId) {
         { deviceId: { exact: selectedDeviceId } },
         config,
         async (decodedText) => {
+            // เมื่อสแกนได้ข้อความ (บาร์โค้ด/คิวอาร์โค้ด)
             const product = await findProductByBarcode(decodedText);
             if (product) {
+                // เพิ่มข้อมูลในตารางสแกน
                 addToTable(product);
                 showStatus("scanStatus", `✅ พบสินค้า: ${product.name}`, "success");
+                // ปิดกล้องและโฟกัสไปที่ช่องจำนวนทันที
+                await stopScanning();
+                // โฟกัสที่ช่องจำนวนของสินค้าที่เพิ่งสแกน
+                setTimeout(() => {
+                    const row = document.querySelector(`tr[data-barcode="${product.barcode}"]`);
+                    if (row) {
+                        const input = row.querySelector('.qty-input');
+                        if (input) {
+                            input.focus();
+                            input.select();
+                        }
+                    }
+                }, 300);
             } else {
-                showStatus("scanStatus", `❌ ไม่พบสินค้า Barcode: ${decodedText}`, "error");
+                // ไม่พบสินค้าในระบบ: ปิดกล้องและแสดง popup แจ้งเตือน
+                await stopScanning();
+                showNotFoundModal(decodedText);
             }
         },
         (err) => {
@@ -504,6 +521,37 @@ function clearAllData() {
             `;
     closeModal();
     showStatus('scanStatus', '✅ ล้างข้อมูลเรียบร้อยแล้ว', 'success');
+}
+
+// ====== Modal แจ้งเตือนเมื่อไม่พบสินค้า ======
+function showNotFoundModal(barcode) {
+    const modal = document.getElementById('notFoundModal');
+    if (!modal) return;
+    // เก็บ barcode ไว้ใน dataset เพื่อใช้ตอนเพิ่มสินค้า
+    modal.dataset.barcode = barcode || '';
+    modal.classList.add('active');
+}
+
+function closeNotFoundModal() {
+    const modal = document.getElementById('notFoundModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.dataset.barcode = '';
+    }
+}
+
+function openAddTabFromModal() {
+    const modal = document.getElementById('notFoundModal');
+    const barcode = modal ? modal.dataset.barcode : '';
+    closeNotFoundModal();
+    // สลับไปยังแท็บเพิ่มสินค้า
+    switchTab('add');
+    // เติมเลข barcode ในแบบฟอร์มเพื่อความสะดวก
+    if (barcode) {
+        document.getElementById('productBarcode').value = barcode;
+    }
+    // โฟกัสที่ช่องรหัสสินค้าเพื่อให้ผู้ใช้เริ่มกรอกข้อมูลได้ทันที
+    document.getElementById('productCode').focus();
 }
 
 document.addEventListener('input', function (e) {

@@ -277,6 +277,26 @@ tr:hover {
     margin-top: 20px;
 }
 
+/* ขีดแนวนอนกลางกล้อง เพื่อช่วยเล็งบาร์โค้ด */
+.center-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    /* background: #dc2626; */
+    border-top: 2px dashed #dc2626; 
+    transform: translateY(-50%);
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+/* จำกัดขนาดความกว้างของพื้นที่สแกนไม่ให้ใหญ่เกินไป */
+#scannerContainer {
+    max-width: 480px;
+    margin: 0 auto;
+}
+
 /*
  * กล่องโฟกัสสแกนบาร์โค้ด
  * ใช้เพื่อให้ผู้ใช้งานวางบาร์โค้ดให้ตรงกรอบระหว่างการสแกน
