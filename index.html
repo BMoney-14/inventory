@@ -114,9 +114,8 @@
                     <!-- ขีดแนวนอนกลางจอเพื่อช่วยเล็งบาร์โค้ด -->
                     <div class="center-line"></div>
                     <!-- Overlay loading ขณะกำลังอ่านบาร์โค้ดในกรอบโฟกัส -->
-                    <div id="focusLoading" class="focus-loading">
-                        <div class="spinner"></div>
-                    </div>
+                    <!-- เอา loading กลมๆออก คงไว้เฉพาะ overlay ว่างไว้ -->
+                    <div id="focusLoading" class="focus-loading"></div>
                     <!-- คำแนะนำระยะห่างของบาร์โค้ด -->
                     <!-- คำแนะนำระยะห่างของบาร์โค้ด; ซ่อนโดย CSS และควบคุมด้วยสคริปต์ -->
                     <div id="distanceGuide" class="distance-guide">ปรับระยะให้อยู่ในกรอบ</div>
@@ -140,15 +139,16 @@
                     <table id="scannedTable">
                         <thead>
                             <tr>
-                                <th>รหัส</th>
-                                <th>ชื่อสินค้า</th>
-                                <th>หน่วย</th>
-                                <th>จำนวน</th>
+                        <th>No</th>
+                        <th>รหัส</th>
+                        <th>ชื่อสินค้า</th>
+                        <th>หน่วย</th>
+                        <th>จำนวน</th>
                             </tr>
                         </thead>
                         <tbody id="scannedBody">
                             <tr>
-                                <td colspan="4" style="text-align: center; color: #9ca3af; padding: 30px;">
+                            <td colspan="5" style="text-align: center; color: #9ca3af; padding: 30px;">
                                     ยังไม่มีรายการสินค้า<br>กรุณาสแกนบาร์โค้ด
                                 </td>
                             </tr>

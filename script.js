@@ -87,9 +87,10 @@ async function autoTurnOnFlash() {
 
 // แสดงหรือซ่อน overlay loading ในกรอบสแกนบาร์โค้ด
 function showFocusLoading(show) {
+    // ไม่แสดง overlay loading เพื่อลดความรก ปล่อยให้เห็นเฉพาะกรอบและข้อความแนะนำ
     const overlay = document.getElementById('focusLoading');
     if (!overlay) return;
-    overlay.style.display = show ? 'flex' : 'none';
+    overlay.style.display = 'none';
 }
 
 // ปรับความสูงของตารางสินค้าที่สแกนให้เต็มพื้นที่ที่เหลือของหน้าจอ
@@ -108,9 +109,19 @@ function adjustScannedTableHeight() {
         const headerHeight = header.getBoundingClientRect().height;
         const scanCard = cards[0];
         const scanCardHeight = scanCard ? scanCard.getBoundingClientRect().height : 0;
-        const margin = 80; // เผื่อ margin/padding และช่องว่างอื่นๆ
-        let available = viewportHeight - headerHeight - scanCardHeight - margin;
-        if (available < 120) available = 120;
+        // ความสูงของส่วนที่อยู่ภายใน scannedCard ที่ไม่ใช่ table (เช่น heading, ปุ่ม action, padding)
+        const headingEl = scannedCard.querySelector('h3');
+        const actionsEl = scannedCard.querySelector('.action-buttons');
+        const headingHeight = headingEl ? headingEl.getBoundingClientRect().height : 0;
+        const actionsHeight = actionsEl ? actionsEl.getBoundingClientRect().height : 0;
+        const style = window.getComputedStyle(scannedCard);
+        const paddingTop = parseFloat(style.paddingTop) || 0;
+        const paddingBottom = parseFloat(style.paddingBottom) || 0;
+        const padding = paddingTop + paddingBottom;
+        // margin เผื่อรวมช่องว่างอื่น ๆ (ช่องว่างระหว่างการ์ดและภายใน)
+        const marginBuffer = 80;
+        let available = viewportHeight - headerHeight - scanCardHeight - headingHeight - actionsHeight - padding - marginBuffer;
+        if (available < 100) available = 100;
         tableContainer.style.maxHeight = available + 'px';
         tableContainer.style.overflowY = 'auto';
     } catch (e) {
@@ -228,11 +239,11 @@ async function startQrWithCamera(selectedDeviceId) {
         qrbox: { width: 280, height: 120 },
         useBarCodeDetectorIfSupported: true,
         disableFlip: true,
-        // ขอความละเอียดสูงขึ้นเพื่อเพิ่มความคมชัด
+        // ขอความละเอียด HD เพื่อสมดุลระหว่างความชัดและความเร็ว (1280x720)
         videoConstraints: {
             deviceId: { exact: selectedDeviceId },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
             focusMode: "continuous"
         },
         formatsToSupport: [
@@ -627,13 +638,17 @@ function addToTable(product) {
         return;
     }
 
-    if (tbody.querySelector('td[colspan="4"]')) {
+    // หากยังมีแถว placeholder ให้ลบก่อน
+    if (tbody.querySelector('td[colspan="5"]')) {
         tbody.innerHTML = '';
     }
 
     const row = document.createElement('tr');
     row.setAttribute('data-barcode', product.barcode);
+    // คำนวณลำดับ No จากจำนวนแถวที่มีอยู่ + 1
+    const rowIndex = tbody.querySelectorAll('tr').length + 1;
     row.innerHTML = `
+                <td>${rowIndex}</td>
                 <td>${product.productCode}</td>
                 <td>${product.name}</td>
                 <td>${product.unit}</td>
@@ -663,10 +678,11 @@ function saveToLocalStorage() {
         if (row.querySelector('td[colspan]')) return;
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
+        // เนื่องจากคอลัมน์แรกคือลำดับ (No) ให้เริ่มเก็บข้อมูลตั้งแต่คอลัมน์ที่ 2 เป็นต้นไป
         data.push({
-            productCode: cells[0].textContent,
-            name: cells[1].textContent,
-            unit: cells[2].textContent,
+            productCode: cells[1].textContent,
+            name: cells[2].textContent,
+            unit: cells[3].textContent,
             quantity: qtyInput.value,
             barcode: row.getAttribute('data-barcode')
         });
@@ -680,10 +696,12 @@ function loadFromLocalStorage() {
     const products = JSON.parse(data);
     const tbody = document.getElementById('scannedBody');
     tbody.innerHTML = '';
-    products.forEach(product => {
+    products.forEach((product, index) => {
         const row = document.createElement('tr');
         row.setAttribute('data-barcode', product.barcode);
+        // เพิ่มคอลัมน์ No และจัดเรียงคอลัมน์ตามโครงสร้างใหม่ (No, code, name, unit, qty)
         row.innerHTML = `
+                    <td>${index + 1}</td>
                     <td>${product.productCode}</td>
                     <td>${product.name}</td>
                     <td>${product.unit}</td>
@@ -710,11 +728,12 @@ function exportToExcel() {
         const cells = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
         const barcode = row.getAttribute('data-barcode');
+        // ข้อมูลในตาราง: คอลัมน์ 1 เป็นลำดับ (No) จึงขยับ index
         data.push([
-            cells[0].textContent,
-            cells[1].textContent,
-            cells[2].textContent,
-            qtyInput.value,
+            cells[1].textContent, // productCode
+            cells[2].textContent, // name
+            cells[3].textContent, // unit
+            qtyInput.value,      // quantity
             barcode
         ]);
     });
@@ -749,7 +768,7 @@ function clearAllData() {
     const tbody = document.getElementById('scannedBody');
     tbody.innerHTML = `
                 <tr>
-                    <td colspan="4" style="text-align: center; color: #9ca3af; padding: 30px;">
+                    <td colspan="5" style="text-align: center; color: #9ca3af; padding: 30px;">
                         ยังไม่มีรายการสินค้า<br>กรุณาสแกนบาร์โค้ด
                     </td>
                 </tr>
