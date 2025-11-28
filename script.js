@@ -826,6 +826,161 @@ function exportToExcel() {
         return;
     }
 
+    // ==== 1) เตรียมวันที่/เวลาไทย ====
+    const now = new Date();
+    const monthsTh = [
+        'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+        'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+    const day = now.getDate();
+    const monthName = monthsTh[now.getMonth()];
+    const yearTh = now.getFullYear() + 543;
+
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+
+    const titleLine = 'รายงานสินค้าคงเหลือ';
+    const monthLine = `เดือน ${monthName} ${yearTh}`;
+    const timeLine  = `เวลา ${hh}:${mm}:${ss}`;
+
+    // ==== 2) เตรียมข้อมูล AOA (Array of Arrays) ====
+    const data = [];
+
+    // Row 1–3: header ที่จะ merge ทีหลัง
+    data.push([titleLine, '', '', '', '']); // row 0
+    data.push([monthLine, '', '', '', '']); // row 1
+    data.push([timeLine,  '', '', '', '']); // row 2
+
+    // Row 4: หัวคอลัมน์
+    data.push(['ลำดับ', 'รหัสสินค้า', 'รายการ', 'หน่วยนับ', 'จำนวนคงเหลือ']); // row 3
+
+    // Row ต่อ ๆ ไป: ข้อมูลจากตาราง
+    let index = 1;
+    rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return; // ข้ามแถว placeholder
+
+        const cells = row.querySelectorAll('td');
+        const qtyInput = row.querySelector('.qty-input');
+
+        // NOTE: ปรับ index ให้ตรงกับโครงตารางปัจจุบันของคุณ:
+        // ถ้าตารางหน้าเว็บเป็น: ลำดับ / รหัส / รายการ / หน่วย / จำนวน
+        // cells[0] = ลำดับ (ไม่จำเป็นต้องใช้ก็ได้ เพราะเราจะนับเอง)
+        // cells[1] = รหัส
+        // cells[2] = รายการ
+        // cells[3] = หน่วย
+        const productCode = cells[1] ? cells[1].textContent.trim() : '';
+        const name        = cells[2] ? cells[2].textContent.trim() : '';
+        const unit        = cells[3] ? cells[3].textContent.trim() : '';
+        const qty         = qtyInput ? qtyInput.value : '';
+
+        data.push([
+            index,
+            productCode,
+            name,
+            unit,
+            qty
+        ]);
+
+        index++;
+    });
+
+    try {
+        if (typeof XLSX === 'undefined' || !XLSX.utils) {
+            throw new Error('SheetJS library is not available');
+        }
+
+        // ==== 3) สร้าง Worksheet & Workbook ====
+        const worksheet = XLSX.utils.aoa_to_sheet(data);
+        const workbook  = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
+
+        // ==== 4) Merge เซลล์ row 1–3 ให้เต็ม 5 คอลัมน์ ====
+        // r = row index (0-based), c = column index (0-based)
+        worksheet['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, // merge A1:E1
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } }, // merge A2:E2
+            { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } }  // merge A3:E3
+        ];
+
+        // ==== 5) จัดรูปแบบให้ header (ถ้าเวอร์ชัน SheetJS รองรับ style) ====
+        function setCellStyle(cellRef, style) {
+            if (!worksheet[cellRef]) return;
+            worksheet[cellRef].s = Object.assign({}, worksheet[cellRef].s || {}, style);
+        }
+
+        // จัดกลางตัวหนาให้ row 1–3
+        const centerBold16 = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { bold: true, sz: 16 }
+        };
+        setCellStyle('A1', centerBold16);
+        setCellStyle('A2', { alignment: { horizontal: 'center', vertical: 'center' }, font: { bold: false, sz: 14 } });
+        setCellStyle('A3', { alignment: { horizontal: 'center', vertical: 'center' }, font: { bold: false, sz: 12 } });
+
+        // จัดรูปแบบหัวคอลัมน์ row 4
+        const headerStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { bold: true }
+        };
+        ['A4', 'B4', 'C4', 'D4', 'E4'].forEach(ref => setCellStyle(ref, headerStyle));
+
+        // กำหนดความกว้างคอลัมน์ให้เหมาะสม
+        worksheet['!cols'] = [
+            { wch: 8 },   // ลำดับ
+            { wch: 15 },  // รหัสสินค้า
+            { wch: 40 },  // รายการ
+            { wch: 15 },  // หน่วยนับ
+            { wch: 15 }   // จำนวนคงเหลือ
+        ];
+
+        // ==== 6) เขียนไฟล์ให้รองรับ Safari / iOS ====
+        const filename = `รายงานสินค้าคงเหลือ_${now.toISOString().split('T')[0]}.xlsx`;
+
+        const excelBuffer = XLSX.write(workbook, {
+            bookType: 'xlsx',
+            type: 'array'
+        });
+
+        const blob = new Blob([excelBuffer], {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+
+        const url = URL.createObjectURL(blob);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+        if (isIOS) {
+            // เปิดแท็บใหม่ให้ user กดแชร์ / Save to Files เอง
+            window.open(url, '_blank');
+            alert(
+                'ระบบสร้างไฟล์ Excel แล้ว\\n' +
+                '- ถ้าใช้ Safari: ดูที่ปุ่มแชร์ แล้วเลือก \"Save to Files\" หรือเปิดด้วยแอปที่รองรับ'
+            );
+        } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+    } catch (err) {
+        console.error('Export to Excel failed', err);
+        alert('ไม่สามารถสร้างไฟล์ Excel ได้');
+    }
+}
+
+
+function exportToExcel_bck() {
+    const rows = document.querySelectorAll('#scannedBody tr');
+    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) {
+        alert('ไม่มีข้อมูลสำหรับ Export');
+        return;
+    }
+
     // เตรียมข้อมูลสำหรับ SheetJS (รวมหัวตาราง)
     const data = [];
     data.push(['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วยนับ', 'จำนวนคงเหลือ', 'Barcode']);
