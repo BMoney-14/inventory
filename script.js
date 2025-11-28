@@ -407,7 +407,118 @@ async function deleteProductByCode(code) {
 }
 
 // ====== สแกนบาร์โค้ดด้วย html5-qrcode ======
+// ====== สแกนบาร์โค้ดด้วย html5-qrcode ======
 async function startScanning() {
+    // ป้องกัน error ถ้าโหลดไลบรารีไม่ได้
+    if (typeof Html5Qrcode === "undefined") {
+        showStatus("scanStatus", "❌ ไม่สามารถโหลดไลบรารีสแกนบาร์โค้ดได้", "error");
+        alert("โหลด html5-qrcode ไม่สำเร็จ (อาจถูกบล็อก หรือเน็ตหลุด)");
+        return;
+    }
+
+    const startBtn = document.getElementById("startScanBtn");
+    const stopBtn = document.getElementById("stopScanBtn");
+    const switchBtn = document.getElementById("switchCameraBtn");
+    const flashBtn = document.getElementById("flashToggleBtn");
+    const scannerContainer = document.getElementById("scannerContainer");
+
+    // ซ่อนปุ่มเริ่มและแสดงปุ่มหยุด + ตัวสแกน
+    startBtn.style.display = "none";
+    stopBtn.style.display = "inline-block";
+    scannerContainer.style.display = "block";
+
+    // รีเซ็ตสถานะแฟลช
+    if (flashBtn) {
+        flashBtn.style.display = "none";
+        flashBtn.textContent = "💡 ปิดแฟลช";
+        isFlashOn = false;
+    }
+
+    // เริ่มระบบแนะนำระยะห่าง + ปรับความสูงตาราง
+    startDistanceGuide();
+    adjustScannedTableHeight();
+
+    try {
+        // ดึงรายการกล้องทั้งหมด
+        const cameras = await Html5Qrcode.getCameras();
+
+        // หากไม่มีอุปกรณ์กล้องเลย
+        if (!cameras || cameras.length === 0) {
+            showStatus("scanStatus", "❌ ไม่พบอุปกรณ์กล้องในเครื่องนี้", "error");
+            startBtn.style.display = "inline-block";
+            stopBtn.style.display = "none";
+            scannerContainer.style.display = "none";
+            if (switchBtn) switchBtn.style.display = "none";
+            return;
+        }
+
+        // เก็บรายการกล้องทั้งหมด
+        camerasList = cameras;
+
+        // หา index กล้องหลังจาก label (รองรับคำว่า 'back', 'rear', 'environment', 'หลัง')
+        let backIndex = camerasList.findIndex(cam => {
+            const label = (cam.label || "").toLowerCase();
+            return label.includes("back") ||
+                   label.includes("rear") ||
+                   label.includes("environment") ||
+                   label.includes("หลัง");
+        });
+
+        // ถ้าไม่เจอจากชื่อเลย → ใช้ "กล้องตัวสุดท้าย" เป็น default (ส่วนใหญ่คือกล้องหลัง)
+        if (backIndex < 0) {
+            backIndex = camerasList.length - 1;
+        }
+        currentCameraIndex = backIndex;
+
+        // ===== debug: แสดงรายการกล้องบน console + ในหน้าจอมือถือ =====
+        const debugList = camerasList
+            .map((cam, idx) => {
+                const isCurrent = (idx === currentCameraIndex) ? "⭐" : " ";
+                return `${isCurrent}[${idx}] ${cam.label || "(ไม่มีชื่อ)"}`;
+            })
+            .join(" | ");
+
+        console.log("Camera list:", debugList);
+
+        // แสดงให้เห็นบน mobile ผ่าน scanStatus
+        showStatus(
+            "scanStatus",
+            `📷 ใช้กล้องตัวที่ ${currentCameraIndex + 1}/${camerasList.length}: ${camerasList[currentCameraIndex].label || "ไม่มีชื่อ (คาดว่าเป็นกล้องหลัง)"}`,
+            "success"
+        );
+        // ============================
+
+        // แสดงปุ่มสลับกล้องเมื่อมีกล้องมากกว่า 1 ตัว
+        if (camerasList.length > 1 && switchBtn) {
+            switchBtn.style.display = "inline-block";
+        } else if (switchBtn) {
+            switchBtn.style.display = "none";
+        }
+
+        // เริ่มสแกนด้วยกล้องที่เลือก
+        const selectedDeviceId = camerasList[currentCameraIndex].id;
+        await startQrWithCamera(selectedDeviceId);
+
+    } catch (err) {
+        console.error("Failed to start scanner", err);
+        showStatus("scanStatus", "❌ ไม่สามารถเริ่มสแกนได้ (อาจไม่ได้ให้สิทธิ์กล้อง)", "error");
+
+        startBtn.style.display = "inline-block";
+        stopBtn.style.display = "none";
+        scannerContainer.style.display = "none";
+        if (switchBtn) switchBtn.style.display = "none";
+
+        // ป้องกัน instance ค้าง
+        if (html5QrCodeInstance) {
+            try { await html5QrCodeInstance.stop(); } catch (e) {}
+            try { await html5QrCodeInstance.clear(); } catch (e) {}
+            html5QrCodeInstance = null;
+        }
+    }
+}
+
+
+async function startScanning_bck() {
     // ป้องกัน error ถ้าโหลดไลบรารีไม่ได้
     if (typeof Html5Qrcode === "undefined") {
         showStatus("scanStatus", "❌ ไม่สามารถโหลดไลบรารีสแกนบาร์โค้ดได้", "error");
