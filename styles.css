@@ -170,6 +170,113 @@ table {
     /* use auto table layout globally; scanned table will be fixed separately */
 }
 
+/* === ปรับขนาดและปรับให้ตารางสินค้าไม่สูงเกินไป === */
+/* Container ของตารางสินค้า (หน้าเพิ่มสินค้า) ให้มีความสูงสูงสุดและสามารถเลื่อนแนวตั้งได้ */
+#productTableContainer {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* จัด alignment ของคอลัมน์ลำดับในตารางสินค้า */
+#productTable th:first-child,
+#productTable td.index-col {
+    text-align: center !important;
+}
+
+/* แถบแบ่งหน้า (pagination) สำหรับตารางสินค้า */
+#productPagination {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: 10px;
+    gap: 8px;
+    font-size: 14px;
+}
+
+
+
+#productPagination input[type="number"] {
+    width: 60px;
+    padding: 6px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 14px;
+}
+
+/* ปุ่มไอคอนสำหรับแก้ไขและลบในตารางสินค้า */
+.icon-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.icon-btn.edit {
+    color: #3b82f6; /* โทนฟ้าน้ำเงินสำหรับแก้ไข */
+}
+
+.icon-btn.delete {
+    color: #ef4444; /* โทนแดงสำหรับลบ */
+}
+
+.icon-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+
+/* ช่องค้นหาในรายการสินค้า */
+.search-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 14px;
+    background: #f9fafb;
+    margin-bottom: 10px;
+    transition: all 0.3s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+}
+
+/* ป้องกันการขึ้นบรรทัดใหม่ของ pagination และปรับสีปุ่ม */
+#productPagination {
+    white-space: nowrap;
+}
+
+/* ปรับสีและสไตล์ของปุ่มก่อนหน้า/ถัดไปใน pagination ให้สวยขึ้น */
+#productPagination button {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+    transition: all 0.2s ease;
+}
+
+#productPagination button:disabled {
+    opacity: 0.5;
+    cursor: default;
+    box-shadow: none;
+}
+
+#productPagination button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(249, 115, 22, 0.4);
+}
+
 /* ให้ตารางสแกนสินค้าใช้ table-layout: fixed เพื่อใช้ width ที่กำหนดในแต่ละคอลัมน์ */
 #scannedTable {
     table-layout: fixed;

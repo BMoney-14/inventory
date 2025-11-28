@@ -7,7 +7,7 @@
     <title>ระบบสแกนบาร์โค้ดสินค้า</title>
     <!-- Import Kanit font for a modern Thai typeface -->
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=202511112242456058">
+    <link rel="stylesheet" href="styles.css?v=202511281941">
 </head>
 <body>
     <div class="container">
@@ -51,10 +51,16 @@
 
                 <!-- รายการสินค้าจากระบบ -->
                 <h3 style="color: #374151; margin-top: 30px; margin-bottom: 10px;">📦 รายการสินค้าทั้งหมด</h3>
-                <div class="table-container">
+                <!-- กล่องค้นหา: ค้นหารหัส, ชื่อสินค้า, บาร์โค้ด หรือหน่วยนับ -->
+                <div class="form-group">
+                    <input type="text" id="productSearchInput" class="search-input" placeholder="ค้นหาสินค้า (รหัส, ชื่อ, บาร์โค้ด หรือหน่วย)">
+                </div>
+                <!-- ใช้ container เฉพาะสำหรับตารางสินค้า เพื่อกำหนดความสูงและ scroll -->
+                <div class="table-container" id="productTableContainer">
                     <table id="productTable">
                         <thead>
                             <tr>
+                                <th>ลำดับ</th>
                                 <th>รหัส</th>
                                 <th>ชื่อสินค้า</th>
                                 <th>บาร์โค้ด</th>
@@ -65,14 +71,16 @@
                         </thead>
                         <tbody id="productBody">
                             <tr>
-                                <!-- จำนวนคอลัมน์ทั้งหมดในตารางถูกปรับเป็น 6 คอลัมน์ (รวมคอลัมน์แก้ไขและลบ) -->
-                                <td colspan="6" style="text-align: center; color: #9ca3af; padding: 20px;">
+                                <!-- จำนวนคอลัมน์ทั้งหมดในตารางถูกปรับเป็น 7 คอลัมน์ (รวมคอลัมน์แก้ไขและลบ) -->
+                                <td colspan="7" style="text-align: center; color: #9ca3af; padding: 20px;">
                                     ไม่มีข้อมูลสินค้า
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+                <!-- ส่วนแบ่งหน้า แสดงปุ่มและกล่องกรอกหมายเลขหน้า -->
+                <div id="productPagination" class="pagination"></div>
             </div>
         </div>
 
@@ -195,6 +203,6 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <!-- SheetJS library สำหรับสร้างไฟล์ Excel (.xlsx) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="script.js?v=202514561112242058"></script>
+    <script src="script.js?v=202511281941"></script>
 </body>
 </html>

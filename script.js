@@ -11,6 +11,15 @@ let currentCameraIndex = 0;
 // สถานะการเปิดแฟลช (torch) ในขณะสแกน
 let isFlashOn = false;
 
+// ====== การแบ่งหน้าในตารางสินค้า ======
+// กำหนดหน้าปัจจุบัน (เริ่มที่หน้าแรก) และขนาดของแต่ละหน้า
+// ปรับจำนวนนี้ตามต้องการ เช่น 25 หรือ 50 รายการต่อหน้าเพื่อให้หน้าเว็บไม่ยาวเกินไป
+let currentProductPage = 1;
+const PRODUCT_PAGE_SIZE = 50;
+
+// เก็บข้อความค้นหาปัจจุบันสำหรับค้นหาสินค้าในตาราง (รหัส, ชื่อ, บาร์โค้ด, หน่วย)
+let productSearchQuery = '';
+
 // Instance for barcode detection to provide distance guidance
 let barcodeDetector = null;
 let distanceGuideInterval = null;
@@ -315,10 +324,7 @@ async function startQrWithCamera(selectedDeviceId) {
 
     // ไม่ต้องแสดง overlay loading ในกรอบสแกน
     showFocusLoading(false);
-    // เปิดแฟลชอัตโนมัติ (หากรองรับ)
-    setTimeout(() => {
-        autoTurnOnFlash();
-    }, 500);
+    // ไม่เปิดแฟลชอัตโนมัติ ให้ผู้ใช้เปิดเองผ่านปุ่มแฟลช
 
 }
 
@@ -331,6 +337,8 @@ async function loadAllProducts() {
         if (Array.isArray(data)) list = data;
         else if (data && Array.isArray(data.products)) list = data.products;
         productsCache = list;
+        // เมื่อตัวข้อมูลสินค้าถูกโหลดใหม่ ให้รีเซ็ตหน้าให้กลับไปหน้าที่ 1
+        currentProductPage = 1;
         renderProductTable();
     } catch (err) {
         console.error('Unable to load products list:', err);
@@ -343,35 +351,162 @@ function renderProductTable() {
     const tbody = document.getElementById('productBody');
     if (!tbody) return;
     tbody.innerHTML = '';
+    // หากไม่มีข้อมูลสินค้าเลย ให้แสดงข้อความ placeholder และไม่ต้องแบ่งหน้า
     if (!productsCache || productsCache.length === 0) {
-        // ไม่มีสินค้าจากฐานข้อมูล ให้แสดงข้อความครอบคลุม 6 คอลัมน์ (รวมคอลัมน์แก้ไข/ลบ)
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #9ca3af; padding: 20px;">ไม่มีข้อมูลสินค้า</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #9ca3af; padding: 20px;">ไม่มีข้อมูลสินค้า</td></tr>`;
+        // เคลียร์ pagination เมื่อไม่มีข้อมูล
+        const pagEl = document.getElementById('productPagination');
+        if (pagEl) pagEl.innerHTML = '';
         return;
     }
-    productsCache.forEach(prod => {
+    // เตรียมรายการที่ผ่านการค้นหาก่อนตัดแบ่งหน้า
+    let filteredList = Array.isArray(productsCache) ? productsCache : [];
+    if (productSearchQuery && productSearchQuery.trim() !== '') {
+        const q = productSearchQuery.trim().toLowerCase();
+        filteredList = filteredList.filter(prod => {
+            const code = String(prod.productCode || prod.productcode || '').toLowerCase();
+            const name = String(prod.name || prod.productName || '').toLowerCase();
+            const barcode = String(prod.barcode || '').toLowerCase();
+            const unit = String(prod.unit || '').toLowerCase();
+            return (
+                code.includes(q) ||
+                name.includes(q) ||
+                barcode.includes(q) ||
+                unit.includes(q)
+            );
+        });
+    }
+    // หากผลการค้นหาไม่มีข้อมูล ให้แสดงข้อความ placeholder และล้าง pagination
+    if (filteredList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #9ca3af; padding: 20px;">ไม่พบข้อมูลสินค้า</td></tr>`;
+        // เคลียร์ pagination
+        const pagEl = document.getElementById('productPagination');
+        if (pagEl) pagEl.innerHTML = '';
+        return;
+    }
+    // คำนวณช่วงของข้อมูลที่จะแสดงในหน้านี้
+    const totalProducts = filteredList.length;
+    const totalPages = Math.ceil(totalProducts / PRODUCT_PAGE_SIZE) || 1;
+    // ปรับ currentProductPage ให้อยู่ในช่วงที่ถูกต้อง
+    if (currentProductPage < 1) currentProductPage = 1;
+    if (currentProductPage > totalPages) currentProductPage = totalPages;
+    const startIndex = (currentProductPage - 1) * PRODUCT_PAGE_SIZE;
+    const endIndex = startIndex + PRODUCT_PAGE_SIZE;
+    const visibleProducts = filteredList.slice(startIndex, endIndex);
+    // สร้างแถวสำหรับสินค้าแต่ละรายการ
+    visibleProducts.forEach((prod, idx) => {
         const code = prod.productCode || prod.productcode || '';
         const name = prod.name || prod.productName || '';
         const barcode = prod.barcode || '';
         const unit = prod.unit || '';
+        // ลำดับจริง (ลำดับในหน้าปัจจุบัน + ค่าสะสมจากหน้าก่อน)
+        const indexNumber = startIndex + idx + 1;
         const tr = document.createElement('tr');
-        /*
-            ปรับโครงสร้างตารางให้มีคอลัมน์แยกสำหรับปุ่มแก้ไขและลบ โดยเพิ่มเซลล์ใหม่สองตำแหน่ง
-            แทนที่จะรวมปุ่มทั้งสองไว้ในคอลัมน์เดียว ซึ่งช่วยให้ตารางสอดคล้องกับส่วนหัวที่มี 6 คอลัมน์
-        */
         tr.innerHTML = `
+                    <td class="index-col">${indexNumber}</td>
                     <td>${code}</td>
                     <td>${name}</td>
                     <td>${barcode}</td>
                     <td>${unit}</td>
                     <td>
-                        <button class="btn btn-secondary btn-sm" onclick="editProduct('${code}')">แก้ไข</button>
+                        <button class="icon-btn edit" onclick="editProduct('${code}')">✏️</button>
                     </td>
                     <td>
-                        <button class="btn btn-danger btn-sm" onclick="deleteProductByCode('${code}')">ลบ</button>
+                        <button class="icon-btn delete" onclick="deleteProductByCode('${code}')">🗑️</button>
                     </td>
                 `;
         tbody.appendChild(tr);
     });
+    // อัปเดตแถบแบ่งหน้าเมื่อมีข้อมูล
+    renderProductPagination();
+}
+
+// ====== ฟังก์ชันแบ่งหน้าและควบคุมการเปลี่ยนหน้า ======
+// เปลี่ยนหน้าและรีเฟรชตารางสินค้า
+function changeProductPage(page) {
+    const totalProducts = productsCache ? productsCache.length : 0;
+    const totalPages = Math.ceil(totalProducts / PRODUCT_PAGE_SIZE) || 1;
+    // ตรวจสอบว่าเลขหน้าถูกต้องหรือไม่
+    if (typeof page !== 'number') page = parseInt(page);
+    if (isNaN(page) || page < 1 || page > totalPages) {
+        return;
+    }
+    currentProductPage = page;
+    renderProductTable();
+}
+
+// สร้าง UI สำหรับแถบแบ่งหน้าสินค้า
+function renderProductPagination() {
+    const pagEl = document.getElementById('productPagination');
+    if (!pagEl) return;
+    // คำนวณจำนวนข้อมูลที่ผ่านการค้นหา เพื่อแสดงจำนวนหน้าที่ถูกต้อง
+    let filteredList = Array.isArray(productsCache) ? productsCache : [];
+    if (productSearchQuery && productSearchQuery.trim() !== '') {
+        const q = productSearchQuery.trim().toLowerCase();
+        filteredList = filteredList.filter(prod => {
+            const code = String(prod.productCode || prod.productcode || '').toLowerCase();
+            const name = String(prod.name || prod.productName || '').toLowerCase();
+            const barcode = String(prod.barcode || '').toLowerCase();
+            const unit = String(prod.unit || '').toLowerCase();
+            return (
+                code.includes(q) ||
+                name.includes(q) ||
+                barcode.includes(q) ||
+                unit.includes(q)
+            );
+        });
+    }
+    const totalProducts = filteredList.length;
+    const totalPages = Math.ceil(totalProducts / PRODUCT_PAGE_SIZE) || 1;
+    // หากหน้าทั้งหมด <= 1 ไม่ต้องแสดง pagination
+    if (totalPages <= 1) {
+        pagEl.innerHTML = '';
+        return;
+    }
+    const prevDisabled = currentProductPage <= 1 ? 'disabled' : '';
+    const nextDisabled = currentProductPage >= totalPages ? 'disabled' : '';
+    // สร้าง HTML สำหรับปุ่มและ input page
+    pagEl.innerHTML = `
+        <button class="btn btn-secondary btn-sm" onclick="changeProductPage(${currentProductPage - 1})" ${prevDisabled}>◀</button>
+        <span style="margin: 0 6px;">หน้า</span>
+        <input type="number" id="productPageInput" min="1" max="${totalPages}" value="${currentProductPage}" style="width:60px; text-align:center; border:1px solid #d1d5db; border-radius:8px; padding:4px;">
+        <span style="margin: 0 6px;">/ ${totalPages}</span>
+        <button class="btn btn-secondary btn-sm" onclick="changeProductPage(${currentProductPage + 1})" ${nextDisabled}>▶</button>
+    `;
+    // จัดให้ pagination อยู่ด้านขวา
+    pagEl.style.display = 'flex';
+    pagEl.style.justifyContent = 'flex-end';
+    pagEl.style.alignItems = 'center';
+    pagEl.style.gap = '8px';
+    // กำหนดพฤติกรรมเมื่อผู้ใช้กด Enter หรือเปลี่ยนหน้าเอง
+    const inputEl = pagEl.querySelector('#productPageInput');
+    if (inputEl) {
+        inputEl.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                const val = parseInt(this.value);
+                if (!isNaN(val)) {
+                    changeProductPage(val);
+                }
+            }
+        });
+        inputEl.addEventListener('blur', function () {
+            const val = parseInt(this.value);
+            if (!isNaN(val)) {
+                changeProductPage(val);
+            } else {
+                // reset value to current page
+                this.value = currentProductPage;
+            }
+        });
+
+        // เมื่อคลิกหรือโฟกัสที่ช่องเลขหน้า ให้ select ข้อความทั้งหมดเพื่อให้พิมพ์ทับได้ง่าย
+        // เลือกข้อความทั้งช่องเมื่อคลิกหรือโฟกัส เพื่อให้ผู้ใช้พิมพ์ทับได้สะดวก
+        function selectPageInput() {
+            this.select();
+        }
+        inputEl.addEventListener('focus', selectPageInput);
+        inputEl.addEventListener('click', selectPageInput);
+    }
 }
 
 function editProduct(code) {
@@ -383,6 +518,21 @@ function editProduct(code) {
     document.getElementById('productUnit').value = prod.unit || '';
     editingProductCode = code;
     switchTab('add');
+    // หลังจากสลับไปแท็บเพิ่มสินค้าแล้ว ให้เลื่อนหน้าจอขึ้นบนสุดและโฟกัสที่ช่องรหัสสินค้า
+    setTimeout(() => {
+        try {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            const codeInput = document.getElementById('productCode');
+            if (codeInput) {
+                codeInput.focus();
+                codeInput.select();
+            }
+        } catch (e) {
+            // fallback: focus ทันที
+            const codeInput = document.getElementById('productCode');
+            if (codeInput) codeInput.focus();
+        }
+    }, 100);
 }
 
 async function deleteProductByCode(code) {
@@ -427,10 +577,10 @@ async function startScanning() {
     stopBtn.style.display = "inline-block";
     scannerContainer.style.display = "block";
 
-    // รีเซ็ตสถานะแฟลช
+    // รีเซ็ตสถานะแฟลช (ค่าเริ่มต้น: ปิดแฟลช และข้อความแสดงว่าปิด)
     if (flashBtn) {
         flashBtn.style.display = "none";
-        flashBtn.textContent = "💡 ปิดแฟลช";
+        flashBtn.textContent = "💡 เปิดแฟลช";
         isFlashOn = false;
     }
 
@@ -657,10 +807,33 @@ function switchTab(tab) {
 
 // ค้นหาสินค้าจาก Barcode ผ่าน Apps Script
 async function findProductByBarcode(barcode) {
+    // ก่อนอื่นค้นหาในข้อมูลที่ cache ไว้ก่อนเพื่อลดการเรียกไปยัง Google Sheets ซึ่งอาจทำให้ช้า
+    if (Array.isArray(productsCache) && productsCache.length > 0) {
+        const local = productsCache.find(p => {
+            const b = p.barcode || p.barCode || '';
+            return String(b) === String(barcode);
+        });
+        if (local) {
+            return local;
+        }
+    }
+    // หากไม่พบใน cache ให้ไปค้นหาจาก Apps Script
     try {
         const response = await fetch(`${GAS_URL}?action=getByBarcode&barcode=${encodeURIComponent(barcode)}`);
         const data = await response.json();
-        if (data.found) return data.product;
+        if (data && data.found && data.product) {
+            // เมื่อดึงข้อมูลมาแล้ว ให้เพิ่มเข้า productsCache หากยังไม่มี เพื่อใช้ในครั้งถัดไป
+            const existing = productsCache.find(p => {
+                const b = p.barcode || p.barCode || '';
+                return String(b) === String(data.product.barcode || data.product.barCode || '');
+            });
+            if (!existing) {
+                productsCache.push(data.product);
+                // หลังเพิ่มสินค้าลง cache ให้รีเฟรชตาราง เพื่อให้รายการอัปเดตโดยไม่ต้องโหลดใหม่ทั้งก้อน
+                renderProductTable();
+            }
+            return data.product;
+        }
         return null;
     } catch (error) {
         console.error('Error finding product:', error);
@@ -1078,6 +1251,16 @@ window.addEventListener('load', function () {
     loadAllProducts();
     // ปรับความสูงของตารางสแกนเมื่อโหลดหน้าเสร็จ
     adjustScannedTableHeight();
+
+    // ตั้งค่า event ค้นหาสินค้า: เมื่อผู้ใช้พิมพ์ในช่องค้นหา ให้กรองรายการสินค้าและรีเซ็ตไปหน้าที่ 1
+    const searchInputEl = document.getElementById('productSearchInput');
+    if (searchInputEl) {
+        searchInputEl.addEventListener('input', function () {
+            productSearchQuery = this.value.toLowerCase();
+            currentProductPage = 1;
+            renderProductTable();
+        });
+    }
 });
 
 // ปรับความสูงของตารางสแกนเมื่อปรับขนาดหน้าต่าง (เช่น หมุนจอมือถือ)
