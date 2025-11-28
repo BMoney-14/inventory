@@ -24,6 +24,32 @@ let productSearchQuery = '';
 let barcodeDetector = null;
 let distanceGuideInterval = null;
 
+// --------- LOGO สำหรับใส่ใน Excel (วาง logo.png ไว้โฟลเดอร์เดียวกับ index.html) ----------
+const LOGO_URL = 'logo.png';
+let logoBase64Cache = null;
+
+async function getLogoBase64() {
+    if (logoBase64Cache) return logoBase64Cache;
+    try {
+        const res = await fetch(LOGO_URL);
+        if (!res.ok) throw new Error('Cannot load logo file');
+        const blob = await res.blob();
+        const reader = new FileReader();
+        return await new Promise((resolve, reject) => {
+            reader.onloadend = () => {
+                // ได้ data URL เช่น data:image/png;base64,....
+                logoBase64Cache = reader.result;
+                resolve(logoBase64Cache);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.warn('โหลดโลโก้ไม่สำเร็จ', e);
+        return null;
+    }
+}
+
 // สลับกล้องไปยังตัวถัดไปและเริ่มสแกนใหม่
 async function switchCamera() {
     // หากมีน้อยกว่าหนึ่งกล้อง ไม่ต้องสลับ
@@ -992,10 +1018,18 @@ function loadFromLocalStorage() {
     });
 }
 
-function exportToExcel() {
+// ==== Export สินค้าที่สแกน ออก Excel + Merge + Logo + รองรับ Mobile Files App ====
+
+async function exportToExcel() {
     const rows = document.querySelectorAll('#scannedBody tr');
+    // ไม่มีข้อมูล หรือเป็นแถว placeholder (colspan=4/5)
     if (rows.length === 0 || rows[0].querySelector('td[colspan]')) {
         alert('ไม่มีข้อมูลสำหรับ Export');
+        return;
+    }
+
+    if (typeof ExcelJS === 'undefined') {
+        alert('ไม่พบ ExcelJS (ตรวจ script src exceljs ใน index.html)');
         return;
     }
 
@@ -1017,134 +1051,476 @@ function exportToExcel() {
     const monthLine = `เดือน ${monthName} ${yearTh}`;
     const timeLine  = `เวลา ${hh}:${mm}:${ss}`;
 
-    // ==== 2) เตรียมข้อมูล AOA (Array of Arrays) ====
-    const data = [];
+    // ==== 2) สร้าง Workbook / Worksheet ====
+    const workbook  = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('สินค้าคงเหลือ');
 
-    // Row 1–3: header ที่จะ merge ทีหลัง
-    data.push([titleLine, '', '', '', '']); // row 0
-    data.push([monthLine, '', '', '', '']); // row 1
-    data.push([timeLine,  '', '', '', '']); // row 2
+    // ตั้งความกว้างคอลัมน์
+    worksheet.columns = [
+        { header: 'ลำดับ',        key: 'index', width: 8  },
+        { header: 'รหัสสินค้า',    key: 'code',  width: 16 },
+        { header: 'รายการ',        key: 'name',  width: 42 },
+        { header: 'หน่วยนับ',      key: 'unit',  width: 14 },
+        { header: 'จำนวนคงเหลือ',  key: 'qty',   width: 16 },
+    ];
 
-    // Row 4: หัวคอลัมน์
-    data.push(['ลำดับ', 'รหัสสินค้า', 'รายการ', 'หน่วยนับ', 'จำนวนคงเหลือ']); // row 3
+    // ==== 3) Header แถว 1–3 + Merge A1:E3 ====
+    worksheet.mergeCells('A1:E1');
+    const row1 = worksheet.getCell('A1');
+    row1.value = titleLine;
+    row1.alignment = { horizontal: 'center', vertical: 'middle' };
+    row1.font = { bold: true, size: 18, color: { argb: 'FF000000' } };
 
-    // Row ต่อ ๆ ไป: ข้อมูลจากตาราง
-    let index = 1;
+    worksheet.mergeCells('A2:E2');
+    const row2 = worksheet.getCell('A2');
+    row2.value = monthLine;
+    row2.alignment = { horizontal: 'center', vertical: 'middle' };
+    row2.font = { bold: false, size: 13, color: { argb: 'FF000000' } };
+
+    worksheet.mergeCells('A3:E3');
+    const row3 = worksheet.getCell('A3');
+    row3.value = timeLine;
+    row3.alignment = { horizontal: 'center', vertical: 'middle' };
+    row3.font = { bold: false, size: 11, color: { argb: 'FF000000' } };
+
+    worksheet.getRow(1).height = 26;
+    worksheet.getRow(2).height = 20;
+    worksheet.getRow(3).height = 18;
+
+    // เส้นบางใต้หัวใหญ่
+    worksheet.getRow(4).border = {
+        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+    };
+
+    // ==== 4) ใส่ LOGO มุมบนซ้าย เป็นสี่เหลี่ยมจัตุรัส ====
+    try {
+        const logoBase64 = await getLogoBase64(); // data:image/png;base64,...
+        if (logoBase64) {
+            const imageId = workbook.addImage({
+                base64: logoBase64,
+                extension: 'png'
+            });
+
+            // แนะนำให้ไฟล์ logo.png เป็นรูปสี่เหลี่ยมจัตุรัสอยู่แล้ว
+            worksheet.addImage(imageId, {
+                tl:  { col: 0, row: 0 },        // เริ่มใกล้ A1
+                ext: { width: 90, height: 90 }  // 90x90 เป็นสี่เหลี่ยมจัตุรัส
+            });
+        }
+    } catch (e) {
+        console.warn('ใส่โลโก้ใน Excel ไม่ได้ แต่จะสร้างไฟล์ต่อ', e);
+    }
+
+    // ==== 5) หัวคอลัมน์ของตาราง (Row 5) ====
+    const headerRowIndex = 5;
+    const headerRow = worksheet.getRow(headerRowIndex);
+    headerRow.values = ['ลำดับ', 'รหัสสินค้า', 'รายการ', 'หน่วยนับ', 'จำนวนคงเหลือ'];
+
+    headerRow.eachCell((cell, colNumber) => {
+        // alignment
+        if (colNumber === 1 || colNumber === 4) {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if (colNumber === 5) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        } else {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+
+        cell.font = { bold: true, color: { argb: 'FF000000' } };
+
+        // border หัวตารางใช้สีดำ
+        cell.border = {
+            top:    { style: 'thin', color: { argb: 'FF000000' } },
+            left:   { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right:  { style: 'thin', color: { argb: 'FF000000' } }
+        };
+
+        // สีส้มอ่อน ๆ หัวคอลัมน์
+        cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFE4C4' } // ส้มอ่อนแนวครีม
+        };
+    });
+    worksheet.getRow(headerRowIndex).height = 22;
+
+    // ==== 6) ใส่ข้อมูลจากตารางสแกน ====
+    let excelRowIndex = headerRowIndex + 1;
+    let runningIndex  = 1;
+
     rows.forEach(row => {
-        if (row.querySelector('td[colspan]')) return; // ข้ามแถว placeholder
+        if (row.querySelector('td[colspan]')) return; // ข้าม placeholder
 
-        const cells = row.querySelectorAll('td');
+        const cells    = row.querySelectorAll('td');
         const qtyInput = row.querySelector('.qty-input');
 
-        // NOTE: ปรับ index ให้ตรงกับโครงตารางปัจจุบันของคุณ:
-        // ถ้าตารางหน้าเว็บเป็น: ลำดับ / รหัส / รายการ / หน่วย / จำนวน
-        // cells[0] = ลำดับ (ไม่จำเป็นต้องใช้ก็ได้ เพราะเราจะนับเอง)
-        // cells[1] = รหัส
-        // cells[2] = รายการ
-        // cells[3] = หน่วย
-        const productCode = cells[1] ? cells[1].textContent.trim() : '';
-        const name        = cells[2] ? cells[2].textContent.trim() : '';
-        const unit        = cells[3] ? cells[3].textContent.trim() : '';
-        const qty         = qtyInput ? qtyInput.value : '';
+        const productCode = cells[0] ? cells[0].textContent.trim() : '';
+        const name        = cells[1] ? cells[1].textContent.trim() : '';
+        const unit        = cells[2] ? cells[2].textContent.trim() : '';
+        const qtyRaw      = qtyInput ? qtyInput.value.trim() : '';
+        let qty = null;
 
-        data.push([
-            index,
-            productCode,
-            name,
-            unit,
-            qty
-        ]);
+        if (qtyRaw !== '') {
+            const parsed = Number(qtyRaw.replace(',', ''));
+            qty = isNaN(parsed) ? null : parsed;
+        }
 
-        index++;
+        const excelRow = worksheet.getRow(excelRowIndex++);
+
+        excelRow.getCell(1).value = runningIndex;
+        excelRow.getCell(2).value = productCode;
+        excelRow.getCell(3).value = name;
+        excelRow.getCell(4).value = unit;
+        excelRow.getCell(5).value = qty;
+
+        excelRow.eachCell((cell, colNumber) => {
+            // alignment ตามคอลัมน์
+            if (colNumber === 1 || colNumber === 4) {
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            } else if (colNumber === 5) {
+                cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            } else {
+                cell.alignment = { horizontal: 'left', vertical: 'middle' };
+            }
+
+            // font สีดำ
+            cell.font = { color: { argb: 'FF000000' } };
+
+            // border ชุดข้อมูล → ใช้สีดำทั้งหมด
+            cell.border = {
+                top:    { style: 'thin', color: { argb: 'FF000000' } },
+                left:   { style: 'thin', color: { argb: 'FF000000' } },
+                bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                right:  { style: 'thin', color: { argb: 'FF000000' } }
+            };
+
+            // แถวสลับสีให้อ่านง่าย (พื้นหลังอ่อน ๆ)
+            if (runningIndex % 2 === 0) {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFFFFAF0' } // ส้มครีมอ่อน
+                };
+            }
+        });
+
+        // รูปแบบตัวเลข "จำนวนคงเหลือ"
+        const qtyCell = excelRow.getCell(5);
+        if (qty !== null) {
+            if (Number.isInteger(qty)) {
+                // ถ้าเป็นจำนวนเต็ม → ไม่มีทศนิยมเลย
+                qtyCell.numFmt = '#,##0';
+            } else {
+                // ถ้ามีทศนิยม → แสดงได้สูงสุด 2 ตำแหน่ง
+                qtyCell.numFmt = '#,##0.##';
+            }
+        }
+
+        excelRow.height = 18;
+        runningIndex++;
     });
 
+    // ==== 7) สร้างไฟล์ + รองรับ SHARE (iOS / Android) + Fallback เหมือนเดิม ====
     try {
-        if (typeof XLSX === 'undefined' || !XLSX.utils) {
-            throw new Error('SheetJS library is not available');
+        const buffer = await workbook.xlsx.writeBuffer();
+
+        const blob = new Blob(
+            [buffer],
+            { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        );
+
+        const fileName = `รายงานสินค้าคงเหลือ_${now.getFullYear()}${String(now.getMonth()+1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`;
+
+        // สร้าง File สำหรับใช้กับ Web Share API (ถ้ารองรับ)
+        const file = new File(
+            [blob],
+            fileName,
+            { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        );
+
+        // ---- 7.1 พยายามใช้ Web Share API ก่อน (iOS / Android รุ่นใหม่) ----
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({
+                    title: 'รายงานสินค้าคงเหลือ',
+                    text: 'ไฟล์รายงาน Excel',
+                    files: [file]
+                });
+                // แชร์สำเร็จแล้ว จบเลย
+                return;
+            } catch (shareErr) {
+                console.warn('แชร์ไฟล์ไม่สำเร็จ ใช้ fallback download/open ต่อ', shareErr);
+                // ถ้า user กด cancel หรือ error อื่น ๆ → ไป fallback ด้านล่าง
+            }
         }
 
-        // ==== 3) สร้าง Worksheet & Workbook ====
-        const worksheet = XLSX.utils.aoa_to_sheet(data);
-        const workbook  = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
-
-        // ==== 4) Merge เซลล์ row 1–3 ให้เต็ม 5 คอลัมน์ ====
-        // r = row index (0-based), c = column index (0-based)
-        worksheet['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, // merge A1:E1
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } }, // merge A2:E2
-            { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } }  // merge A3:E3
-        ];
-
-        // ==== 5) จัดรูปแบบให้ header (ถ้าเวอร์ชัน SheetJS รองรับ style) ====
-        function setCellStyle(cellRef, style) {
-            if (!worksheet[cellRef]) return;
-            worksheet[cellRef].s = Object.assign({}, worksheet[cellRef].s || {}, style);
-        }
-
-        // จัดกลางตัวหนาให้ row 1–3
-        const centerBold16 = {
-            alignment: { horizontal: 'center', vertical: 'center' },
-            font: { bold: true, sz: 16 }
-        };
-        setCellStyle('A1', centerBold16);
-        setCellStyle('A2', { alignment: { horizontal: 'center', vertical: 'center' }, font: { bold: false, sz: 14 } });
-        setCellStyle('A3', { alignment: { horizontal: 'center', vertical: 'center' }, font: { bold: false, sz: 12 } });
-
-        // จัดรูปแบบหัวคอลัมน์ row 4
-        const headerStyle = {
-            alignment: { horizontal: 'center', vertical: 'center' },
-            font: { bold: true }
-        };
-        ['A4', 'B4', 'C4', 'D4', 'E4'].forEach(ref => setCellStyle(ref, headerStyle));
-
-        // กำหนดความกว้างคอลัมน์ให้เหมาะสม
-        worksheet['!cols'] = [
-            { wch: 8 },   // ลำดับ
-            { wch: 15 },  // รหัสสินค้า
-            { wch: 40 },  // รายการ
-            { wch: 15 },  // หน่วยนับ
-            { wch: 15 }   // จำนวนคงเหลือ
-        ];
-
-        // ==== 6) เขียนไฟล์ให้รองรับ Safari / iOS ====
-        const filename = `รายงานสินค้าคงเหลือ_${now.toISOString().split('T')[0]}.xlsx`;
-
-        const excelBuffer = XLSX.write(workbook, {
-            bookType: 'xlsx',
-            type: 'array'
-        });
-
-        const blob = new Blob([excelBuffer], {
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        });
-
+        // ---- 7.2 Fallback แบบเดิม: iOS เปิดแท็บใหม่ให้ Save to Files, ที่เหลือดาวน์โหลด ----
         const url = URL.createObjectURL(blob);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
         if (isIOS) {
-            // เปิดแท็บใหม่ให้ user กดแชร์ / Save to Files เอง
             window.open(url, '_blank');
             alert(
-                'ระบบสร้างไฟล์ Excel แล้ว\\n' +
-                '- ถ้าใช้ Safari: ดูที่ปุ่มแชร์ แล้วเลือก \"Save to Files\" หรือเปิดด้วยแอปที่รองรับ'
+                'ระบบสร้างไฟล์ Excel แล้ว\n' +
+                '- ถ้าใช้ Safari: แตะปุ่มแชร์ แล้วเลือก "Save to Files" เพื่อบันทึกลงแอปไฟล์'
             );
         } else {
             const a = document.createElement('a');
             a.href = url;
-            a.download = filename;
+            a.download = fileName;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
         }
 
         setTimeout(() => URL.revokeObjectURL(url), 10000);
-
     } catch (err) {
         console.error('Export to Excel failed', err);
         alert('ไม่สามารถสร้างไฟล์ Excel ได้');
     }
 }
+
+
+
+async function exportToExcel_bck_css() {
+    const rows = document.querySelectorAll('#scannedBody tr');
+    // ไม่มีข้อมูล หรือเป็นแถว placeholder (colspan=4)
+    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) {
+        alert('ไม่มีข้อมูลสำหรับ Export');
+        return;
+    }
+
+    if (typeof ExcelJS === 'undefined') {
+        alert('ไม่พบ ExcelJS (ตรวจ script src exceljs ใน index.html)');
+        return;
+    }
+
+    // ==== 1) เตรียมวันที่/เวลาไทย ====
+    const now = new Date();
+    const monthsTh = [
+        'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+        'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+    const day = now.getDate();
+    const monthName = monthsTh[now.getMonth()];
+    const yearTh = now.getFullYear() + 543;
+
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+
+    const titleLine = 'รายงานสินค้าคงเหลือ';
+    const monthLine = `เดือน ${monthName} ${yearTh}`;
+    const timeLine  = `เวลา ${hh}:${mm}:${ss}`;
+
+    // ==== 2) สร้าง Workbook / Worksheet ====
+    const workbook  = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('สินค้าคงเหลือ');
+
+    // ตั้งความกว้างคอลัมน์
+    worksheet.columns = [
+        { header: 'ลำดับ',        key: 'index', width: 8  },
+        { header: 'รหัสสินค้า',    key: 'code',  width: 16 },
+        { header: 'รายการ',        key: 'name',  width: 42 },
+        { header: 'หน่วยนับ',      key: 'unit',  width: 14 },
+        { header: 'จำนวนคงเหลือ',  key: 'qty',   width: 16 },
+    ];
+
+    // ==== 3) Header แถว 1–3 + Merge A1:E3 ====
+    worksheet.mergeCells('A1:E1');
+    const row1 = worksheet.getCell('A1');
+    row1.value = titleLine;
+    row1.alignment = { horizontal: 'center', vertical: 'middle' };
+    row1.font = { bold: true, size: 18, color: { argb: 'FF000000' } };
+
+    worksheet.mergeCells('A2:E2');
+    const row2 = worksheet.getCell('A2');
+    row2.value = monthLine;
+    row2.alignment = { horizontal: 'center', vertical: 'middle' };
+    row2.font = { bold: false, size: 13, color: { argb: 'FF000000' } };
+
+    worksheet.mergeCells('A3:E3');
+    const row3 = worksheet.getCell('A3');
+    row3.value = timeLine;
+    row3.alignment = { horizontal: 'center', vertical: 'middle' };
+    row3.font = { bold: false, size: 11, color: { argb: 'FF000000' } };
+
+    worksheet.getRow(1).height = 26;
+    worksheet.getRow(2).height = 20;
+    worksheet.getRow(3).height = 18;
+
+    // เส้นบางใต้หัวใหญ่
+    worksheet.getRow(4).border = {
+        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+    };
+
+    // ==== 4) ใส่ LOGO มุมบนซ้าย เป็นสี่เหลี่ยมจัตุรัส ====
+    try {
+        const logoBase64 = await getLogoBase64(); // data:image/png;base64,...
+        if (logoBase64) {
+            const imageId = workbook.addImage({
+                base64: logoBase64,
+                extension: 'png'
+            });
+
+            // แนะนำให้ไฟล์ logo.png เป็นรูปสี่เหลี่ยมจัตุรัสอยู่แล้ว
+            worksheet.addImage(imageId, {
+                tl:  { col: 0, row: 0 },        // เริ่มใกล้ A1
+                ext: { width: 90, height: 90 }  // 90x90 เป็นสี่เหลี่ยมจัตุรัส
+            });
+        }
+    } catch (e) {
+        console.warn('ใส่โลโก้ใน Excel ไม่ได้ แต่จะสร้างไฟล์ต่อ', e);
+    }
+
+    // ==== 5) หัวคอลัมน์ของตาราง (Row 5) ====
+    const headerRowIndex = 5;
+    const headerRow = worksheet.getRow(headerRowIndex);
+    headerRow.values = ['ลำดับ', 'รหัสสินค้า', 'รายการ', 'หน่วยนับ', 'จำนวนคงเหลือ'];
+
+    headerRow.eachCell((cell, colNumber) => {
+        // alignment
+        if (colNumber === 1 || colNumber === 4) {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if (colNumber === 5) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        } else {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+
+        cell.font = { bold: true, color: { argb: 'FF000000' } };
+
+        // border หัวตารางใช้เทาอ่อน
+        cell.border = {
+            top:    { style: 'thin', color: { argb: 'FF000000' } },
+            left:   { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right:  { style: 'thin', color: { argb: 'FF000000' } }
+        };
+
+        // สีส้มอ่อน ๆ หัวคอลัมน์
+        cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFE4C4' } // ส้มอ่อนแนวครีม
+        };
+    });
+    worksheet.getRow(headerRowIndex).height = 22;
+
+    // ==== 6) ใส่ข้อมูลจากตารางสแกน ====
+    let excelRowIndex = headerRowIndex + 1;
+    let runningIndex  = 1;
+
+    rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return; // ข้าม placeholder
+
+        const cells    = row.querySelectorAll('td');
+        const qtyInput = row.querySelector('.qty-input');
+
+        const productCode = cells[0] ? cells[0].textContent.trim() : '';
+        const name        = cells[1] ? cells[1].textContent.trim() : '';
+        const unit        = cells[2] ? cells[2].textContent.trim() : '';
+        const qtyRaw      = qtyInput ? qtyInput.value.trim() : '';
+        let qty = null;
+
+        if (qtyRaw !== '') {
+            const parsed = Number(qtyRaw.replace(',', ''));
+            qty = isNaN(parsed) ? null : parsed;
+        }
+
+        const excelRow = worksheet.getRow(excelRowIndex++);
+
+        excelRow.getCell(1).value = runningIndex;
+        excelRow.getCell(2).value = productCode;
+        excelRow.getCell(3).value = name;
+        excelRow.getCell(4).value = unit;
+        excelRow.getCell(5).value = qty;
+
+        excelRow.eachCell((cell, colNumber) => {
+            // alignment ตามคอลัมน์
+            if (colNumber === 1 || colNumber === 4) {
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            } else if (colNumber === 5) {
+                cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            } else {
+                cell.alignment = { horizontal: 'left', vertical: 'middle' };
+            }
+
+            // font สีดำ
+            cell.font = { color: { argb: 'FF000000' } };
+
+            // border ชุดข้อมูล → ใช้สีดำทั้งหมด
+            cell.border = {
+                top:    { style: 'thin', color: { argb: 'FF000000' } },
+                left:   { style: 'thin', color: { argb: 'FF000000' } },
+                bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                right:  { style: 'thin', color: { argb: 'FF000000' } }
+            };
+
+            // แถวสลับสีให้อ่านง่าย (พื้นหลังอ่อน ๆ)
+            if (runningIndex % 2 === 0) {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFFFFAF0' } // ส้มครีมอ่อน
+                };
+            }
+        });
+
+        // รูปแบบตัวเลข "จำนวนคงเหลือ"
+        const qtyCell = excelRow.getCell(5);
+        if (qty !== null) {
+            if (Number.isInteger(qty)) {
+                // ถ้าเป็นจำนวนเต็ม → ไม่มีทศนิยมเลย
+                qtyCell.numFmt = '#,##0';
+            } else {
+                // ถ้ามีทศนิยม → แสดงได้สูงสุด 2 ตำแหน่ง
+                qtyCell.numFmt = '#,##0.##';
+            }
+        }
+
+        excelRow.height = 18;
+        runningIndex++;
+    });
+
+    // ==== 7) สร้างไฟล์และ trigger download (รองรับ Mobile / Files App) ====
+    try {
+        const buffer = await workbook.xlsx.writeBuffer();
+
+        const blob = new Blob(
+            [buffer],
+            { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const fileName = `รายงานสินค้าคงเหลือ_${now.getFullYear()}${String(now.getMonth()+1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`;
+
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+        if (isIOS) {
+            window.open(url, '_blank');
+            alert(
+                'ระบบสร้างไฟล์ Excel แล้ว\n' +
+                '- ถ้าใช้ Safari: แตะปุ่มแชร์ แล้วเลือก "Save to Files" เพื่อบันทึกลงแอปไฟล์'
+            );
+        } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+        console.error('Export to Excel failed', err);
+        alert('ไม่สามารถสร้างไฟล์ Excel ได้');
+    }
+}
+
+
 
 
 function exportToExcel_bck() {
